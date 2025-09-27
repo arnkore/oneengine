@@ -415,7 +415,7 @@ impl ExtremeObservability {
         
         PerformanceMetrics {
             execution_time,
-            memory_usage,
+            memory_usage: memory_usage as u64,
             throughput,
             error_rate,
             cache_hit_rate: rf_hit_rate,

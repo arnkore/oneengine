@@ -437,6 +437,11 @@ impl SkewHandler {
         let mut partitioned_batches = vec![Vec::new(); partition_count];
         
         // 实现基于重尾键的分区逻辑
+        // 将ScalarValue转换为String
+        let heavy_tail_keys_str: Vec<String> = heavy_tail_keys.iter()
+            .map(|v| format!("{:?}", v))
+            .collect();
+        
         let mut key_to_partition = std::collections::HashMap::new();
         
         // 为每个重尾键分配一个专门的分区
@@ -445,10 +450,6 @@ impl SkewHandler {
         }
         
         // 将批次按键值分配到不同分区
-        // 将ScalarValue转换为String
-        let heavy_tail_keys_str: Vec<String> = heavy_tail_keys.iter()
-            .map(|v| format!("{:?}", v))
-            .collect();
         let batches_by_key = self.split_batch_by_keys(&batch, &heavy_tail_keys_str)?;
         
         for (key, key_batches) in batches_by_key {

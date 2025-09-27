@@ -460,8 +460,8 @@ impl DataLakeReader {
                 
                 // 读取列数据
                 let mut values = Vec::new();
-                let mut def_levels = Vec::new();
-                let mut rep_levels = Vec::new();
+                let mut def_levels: Vec<i16> = Vec::new();
+                let mut rep_levels: Vec<i16> = Vec::new();
                 
                 // 简化的列数据读取 - 使用占位符数据
                 let num_rows = 100; // 占位符行数
@@ -625,8 +625,8 @@ impl DataLakeReader {
                         _ => return Err("Unsupported value type for equal comparison".to_string()),
                     };
                     
-                    for (i, &is_valid) in mask.iter().enumerate() {
-                        if is_valid {
+                    for (i, is_valid) in mask.iter().enumerate() {
+                        if is_valid.unwrap_or(true) {
                             valid_rows.push(i);
                         }
                     }
@@ -657,8 +657,8 @@ impl DataLakeReader {
                         _ => return Err("Unsupported value type for greater than comparison".to_string()),
                     };
                     
-                    for (i, &is_valid) in mask.iter().enumerate() {
-                        if is_valid {
+                    for (i, is_valid) in mask.iter().enumerate() {
+                        if is_valid.unwrap_or(true) {
                             valid_rows.push(i);
                         }
                     }
@@ -689,8 +689,8 @@ impl DataLakeReader {
                         _ => return Err("Unsupported value type for less than comparison".to_string()),
                     };
                     
-                    for (i, &is_valid) in mask.iter().enumerate() {
-                        if is_valid {
+                    for (i, is_valid) in mask.iter().enumerate() {
+                        if is_valid.unwrap_or(true) {
                             valid_rows.push(i);
                         }
                     }
@@ -729,7 +729,7 @@ impl DataLakeReader {
                     };
                     
                     // 组合两个条件
-                    for (i, (&min_valid, &max_valid)) in min_mask.iter().zip(max_mask.iter()).enumerate() {
+                    for (i, (min_valid, max_valid)) in min_mask.iter().zip(max_mask.iter()).enumerate() {
                         if min_valid && max_valid {
                             valid_rows.push(i);
                         }
@@ -740,7 +740,7 @@ impl DataLakeReader {
                 if let Some(column_index) = batch.schema().column_with_name(column) {
                     let array = batch.column(column_index.0);
                     for (i, is_null) in array.nulls().iter().enumerate() {
-                        if is_null {
+                        if is_null.unwrap_or(&false) {
                             valid_rows.push(i);
                         }
                     }
@@ -775,17 +775,8 @@ impl DataLakeReader {
             if let Some(column_index) = self.get_column_index_by_name(column_name) {
                 if let Some(statistics) = row_group.column(column_index).statistics() {
                     // 简化的统计信息检查，避免使用不存在的API
-                    let matches = match expected_value {
-                        datafusion_common::ScalarValue::Int32(Some(_val)) => {
-                            // 对于简化实现，假设所有数据都匹配
-                            true
-                        },
-                        datafusion_common::ScalarValue::Utf8(Some(_val)) => {
-                            // 对于简化实现，假设所有数据都匹配
-                            true
-                        },
-                        _ => true, // 其他类型暂时假设匹配
-                    };
+                    // 对于简化实现，假设所有数据都匹配
+                    let matches = true;
                     
                     if !matches {
                         return Ok(false);
