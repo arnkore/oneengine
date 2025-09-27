@@ -6,6 +6,7 @@ pub mod parquet_reader;
 pub mod arrow_ipc;
 pub mod flight_server;
 pub mod flight_exchange;
+pub mod data_lake_reader;
 
 // 重新导出常用类型
 pub use parquet_reader::{ParquetReader, ParquetReaderConfig, ParquetFileStats, Predicate, ColumnSelection};
