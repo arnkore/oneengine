@@ -1,0 +1,32 @@
+scheduler:
+  queue_capacity: 10000
+  max_concurrent_tasks: 100
+  scheduling_interval_ms: 10
+  resource_config:
+    max_cpu_utilization: 0.8
+    max_memory_utilization: 0.8
+    enable_gpu_scheduling: false
+    enable_custom_resources: false
+executor:
+  worker_threads: 10
+  max_task_retries: 3
+  task_timeout_seconds: 300
+  enable_metrics: true
+protocol:
+  bind_address: 0.0.0.0
+  port: 8080
+  supported_engines:
+  - spark
+  - flink
+  - trino
+  - presto
+  max_connections: 1000
+memory:
+  max_memory_mb: 8192
+  page_size_mb: 64
+  enable_memory_pooling: true
+  gc_threshold: 0.8
+logging:
+  level: info
+  format: json
+  output: stdout
