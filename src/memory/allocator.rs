@@ -361,7 +361,7 @@ impl ArenaAllocator {
             return None;
         }
 
-        let ptr = self.memory_pool.as_ptr().add(aligned_offset);
+        let ptr = unsafe { self.memory_pool.as_ptr().add(aligned_offset) };
         Some(ptr as *mut u8)
     }
 

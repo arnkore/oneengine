@@ -280,7 +280,7 @@ impl<T> MpscQueue<T> {
         }
 
         let data = unsafe {
-            let next_node = &*next;
+            let next_node = &mut *next;
             next_node.data.take()
         };
 
@@ -413,8 +413,9 @@ impl RaceTester {
         let mut handles = Vec::new();
 
         // 创建测试线程
+        let test_func = Arc::new(test_func);
         for _ in 0..self.config.thread_count {
-            let test_func = Arc::new(test_func);
+            let test_func = test_func.clone();
             let results = self.results.clone();
             
             let handle = thread::spawn(move || {
@@ -576,7 +577,7 @@ impl<T> WorkStealingQueue<T> {
     }
 
     /// 推送任务到指定队列
-    pub fn push(&self, queue_id: usize, task: T) -> Result<(), T> {
+    pub fn push(&mut self, queue_id: usize, task: T) -> Result<(), T> {
         if queue_id >= self.queue_count {
             return Err(task);
         }
@@ -587,7 +588,7 @@ impl<T> WorkStealingQueue<T> {
     }
 
     /// 从指定队列弹出任务
-    pub fn pop(&self, queue_id: usize) -> Option<T> {
+    pub fn pop(&mut self, queue_id: usize) -> Option<T> {
         if queue_id >= self.queue_count {
             return None;
         }
@@ -597,7 +598,7 @@ impl<T> WorkStealingQueue<T> {
     }
 
     /// 窃取任务
-    pub fn steal(&self, from_queue_id: usize, to_queue_id: usize) -> Option<T> {
+    pub fn steal(&mut self, from_queue_id: usize, to_queue_id: usize) -> Option<T> {
         if from_queue_id >= self.queue_count || to_queue_id >= self.queue_count {
             return None;
         }

@@ -257,11 +257,12 @@ impl SkewDetector {
     fn update_key_statistics(&mut self, key: &ScalarValue, batch_size: u64) {
         let now = Instant::now();
         
+        let key_size = self.estimate_key_size(key);
         match self.key_stats.get_mut(key) {
             Some(stats) => {
                 stats.count += batch_size;
                 stats.last_seen = now;
-                stats.data_size += self.estimate_key_size(key) * batch_size;
+                stats.data_size += key_size * batch_size;
             },
             None => {
                 self.key_stats.insert(key.clone(), KeyStatistics {
