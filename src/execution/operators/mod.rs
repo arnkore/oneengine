@@ -11,6 +11,7 @@ pub mod scan_parquet;
 pub mod spill_manager;
 pub mod adaptive_batch;
 pub mod join_adaptation;
+pub mod skew_handling;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
