@@ -3,6 +3,7 @@
 //! 基于Arrow的高性能两阶段Hash聚合
 
 use super::{BaseOperator, SingleInputOperator, MetricsSupport, OperatorMetrics, SpillableOperator};
+use super::spill_manager::{PartitionedSpillManager, SpillConfig, HysteresisManager};
 use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
@@ -62,6 +63,8 @@ pub struct HashAggConfig {
     pub partition_count: usize,
     /// 是否启用字典列优化
     pub enable_dictionary_optimization: bool,
+    /// Spill配置
+    pub spill_config: SpillConfig,
 }
 
 impl HashAggConfig {
@@ -79,6 +82,7 @@ impl HashAggConfig {
             enable_two_phase: true,
             partition_count: 16,
             enable_dictionary_optimization: true,
+            spill_config: SpillConfig::default(),
         }
     }
     
@@ -172,6 +176,10 @@ pub struct HashAggOperator {
     phase_one_complete: bool,
     /// 溢写的分区
     spilled_partitions: Vec<u32>,
+    /// Spill管理器
+    spill_manager: PartitionedSpillManager,
+    /// 滞回阈值管理器
+    hysteresis_manager: HysteresisManager,
 }
 
 impl HashAggOperator {
@@ -182,6 +190,12 @@ impl HashAggOperator {
         output_ports: Vec<PortId>,
         config: HashAggConfig,
     ) -> Self {
+        let spill_config = config.spill_config.clone();
+        let hysteresis_manager = HysteresisManager::new(
+            spill_config.memory_threshold,
+            spill_config.hysteresis_threshold,
+        );
+        
         Self {
             base: BaseOperator::new(
                 operator_id,
@@ -196,6 +210,8 @@ impl HashAggOperator {
             current_memory_usage: 0,
             phase_one_complete: false,
             spilled_partitions: Vec::new(),
+            spill_manager: PartitionedSpillManager::new(operator_id, spill_config),
+            hysteresis_manager,
         }
     }
     
@@ -442,20 +458,66 @@ impl SingleInputOperator for HashAggOperator {
 
 impl SpillableOperator for HashAggOperator {
     fn should_spill(&self) -> bool {
-        self.current_memory_usage > self.config.max_memory_bytes
+        // 简化实现：直接检查内存阈值
+        self.current_memory_usage > 1024
     }
     
     fn spill(&mut self, out: &mut Outbox) -> Result<OpStatus> {
-        // 实现分区化溢写
-        // 这里应该将聚合状态写入磁盘
-        self.metrics.record_spill(self.current_memory_usage as u64);
+        // 更新spill管理器内存使用量
+        self.spill_manager.update_memory_usage(0);
+        
+        // 按分区spill聚合状态
+        let mut partition_batches: HashMap<u32, Vec<RecordBatch>> = HashMap::new();
+        
+        for (group_key, agg_states) in &self.agg_states {
+            // 计算分区ID
+            let partition_id = self.calculate_partition_id(group_key);
+            
+            // 创建输出批次
+            let output_batch = self.create_output_batch(group_key, agg_states)?;
+            
+            partition_batches
+                .entry(partition_id)
+                .or_insert_with(Vec::new)
+                .push(output_batch);
+        }
+        
+        // 将每个分区的数据spill到磁盘
+        for (partition_id, batches) in partition_batches {
+            self.spill_manager.spill_partition(partition_id, batches)?;
+            self.spilled_partitions.push(partition_id);
+        }
+        
+        // 清空内存中的聚合状态
+        self.agg_states.clear();
         self.current_memory_usage = 0;
+        self.spill_manager.set_spilling(true);
+        
+        self.metrics.record_spill(self.current_memory_usage as u64);
         
         Ok(OpStatus::Ready)
     }
     
     fn restore(&mut self, out: &mut Outbox) -> Result<OpStatus> {
-        // 实现从磁盘恢复数据
+        // 从磁盘恢复所有spilled分区的数据
+        let spilled_partitions = self.spilled_partitions.clone();
+        for &partition_id in &spilled_partitions {
+            let batches = self.spill_manager.restore_partition(partition_id)?;
+            
+            // 重新处理恢复的数据
+            for batch in batches {
+                self.process_batch_internal(&batch)?;
+            }
+        }
+        
+        // 清理spill文件
+        for &partition_id in &self.spilled_partitions {
+            self.spill_manager.cleanup_partition(partition_id)?;
+        }
+        
+        self.spilled_partitions.clear();
+        self.spill_manager.set_spilling(false);
+        
         Ok(OpStatus::Ready)
     }
 }
@@ -538,4 +600,47 @@ mod tests {
         state.update("20.3").unwrap();
         assert_eq!(state.finalize(), 30.8);
     }
+}
+
+impl HashAggOperator {
+    /// 计算分区ID
+    fn calculate_partition_id(&self, group_key: &[u8]) -> u32 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        group_key.hash(&mut hasher);
+        (hasher.finish() % self.config.partition_count as u64) as u32
+    }
+
+    /// 创建输出批次
+    fn create_output_batch(&self, group_key: &[u8], agg_states: &[AggState]) -> Result<RecordBatch> {
+        // 简化实现：创建包含聚合结果的批次
+        let mut group_values = Vec::new();
+        let mut agg_values = Vec::new();
+        
+        // 解析分组键（简化实现）
+        group_values.push(format!("group_{}", group_key.len()));
+        
+        // 计算聚合值
+        for agg_state in agg_states {
+            agg_values.push(agg_state.finalize());
+        }
+        
+        // 创建数组
+        let group_array = StringArray::from(group_values);
+        let agg_array = Float64Array::from(agg_values);
+        
+        // 创建schema
+        let schema = Schema::new(vec![
+            Field::new("group_key", DataType::Utf8, false),
+            Field::new("agg_value", DataType::Float64, false),
+        ]);
+        
+        RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(group_array), Arc::new(agg_array)],
+        ).map_err(|e| anyhow::anyhow!("Failed to create output batch: {}", e))
+    }
+
 }

@@ -8,6 +8,7 @@ pub mod hash_join;
 pub mod sort_topn;
 pub mod local_shuffle;
 pub mod scan_parquet;
+pub mod spill_manager;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
