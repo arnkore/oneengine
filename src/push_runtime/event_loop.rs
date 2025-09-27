@@ -211,7 +211,8 @@ impl EventLoop {
                 let operator_ids: Vec<_> = self.operators.keys().cloned().collect();
                 for op_id in operator_ids {
                     // 为每个算子创建独立的outbox
-                    let mut outbox = Outbox::new(
+                    let mut outbox = Outbox::new_with_credit_manager(
+                        op_id,
                         &mut self.credit_manager,
                         &mut self.event_queue,
                         &self.port_mapping,
@@ -245,7 +246,8 @@ impl EventLoop {
     fn handle_data_event(&mut self, operator_id: OperatorId, port: PortId, batch: RecordBatch) -> Result<bool> {
         if let Some(operator) = self.operators.get_mut(&operator_id) {
             // 创建outbox
-            let mut outbox = Outbox::new(
+            let mut outbox = Outbox::new_with_credit_manager(
+                operator_id,
                 &mut self.credit_manager,
                 &mut self.event_queue,
                 &self.port_mapping,
@@ -274,7 +276,8 @@ impl EventLoop {
     fn handle_control_event(&mut self, operator_id: OperatorId, event: Event) -> Result<bool> {
         if let Some(operator) = self.operators.get_mut(&operator_id) {
             // 创建outbox
-            let mut outbox = Outbox::new(
+            let mut outbox = Outbox::new_with_credit_manager(
+                operator_id,
                 &mut self.credit_manager,
                 &mut self.event_queue,
                 &self.port_mapping,
@@ -293,8 +296,9 @@ impl EventLoop {
     }
     
     /// 创建输出邮箱
-    fn create_outbox(&mut self) -> Outbox {
-        Outbox::new(
+    fn create_outbox(&mut self, operator_id: OperatorId) -> Outbox {
+        Outbox::new_with_credit_manager(
+            operator_id,
             &mut self.credit_manager,
             &mut self.event_queue,
             &self.port_mapping,
