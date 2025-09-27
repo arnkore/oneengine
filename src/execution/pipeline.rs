@@ -1,4 +1,4 @@
-use crate::core::task::Task;
+use crate::execution::task::Task;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;

@@ -7,8 +7,8 @@ use crate::execution::operators::vectorized_projector::{ProjectionExpression, Ve
 use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::protocol::adapter::ProtocolAdapter;
 use crate::utils::config::Config;
-use crate::core::pipeline::Pipeline;
-use crate::core::task::Task;
+use crate::execution::pipeline::Pipeline;
+use crate::execution::task::Task;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -192,7 +192,7 @@ impl OneEngine {
             let output_ports = vec![port_counter];
             
             let operator_node = match &task.task_type {
-                crate::core::task::TaskType::DataSource { source_type, .. } => {
+                crate::execution::task::TaskType::DataSource { source_type, .. } => {
                     OperatorNode {
                         operator_id,
                         operator_type: OperatorType::Scan { 
@@ -203,7 +203,7 @@ impl OneEngine {
                         config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
                     }
                 },
-                crate::core::task::TaskType::DataProcessing { operator, .. } => {
+                crate::execution::task::TaskType::DataProcessing { operator, .. } => {
                     match operator.as_str() {
                         "filter" => {
                             OperatorNode {

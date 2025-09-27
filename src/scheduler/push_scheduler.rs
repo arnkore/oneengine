@@ -1,5 +1,5 @@
-use crate::core::task::Task;
-use crate::core::pipeline::Pipeline;
+use crate::execution::task::Task;
+use crate::execution::pipeline::Pipeline;
 use crate::scheduler::task_queue::TaskQueue;
 use crate::scheduler::pipeline_manager::PipelineManager;
 use crate::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
@@ -240,7 +240,7 @@ impl PushScheduler {
             let output_ports = vec![port_counter];
             
             let operator_node = match &task.task_type {
-                crate::core::task::TaskType::DataSource { source_type, .. } => {
+                crate::execution::task::TaskType::DataSource { source_type, .. } => {
                     OperatorNode {
                         operator_id,
                         operator_type: OperatorType::Scan { 
@@ -251,7 +251,7 @@ impl PushScheduler {
                         config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
                     }
                 },
-                crate::core::task::TaskType::DataProcessing { operator, .. } => {
+                crate::execution::task::TaskType::DataProcessing { operator, .. } => {
                     match operator.as_str() {
                         "filter" => {
                             OperatorNode {

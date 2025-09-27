@@ -1,4 +1,4 @@
-use crate::core::pipeline::{Pipeline, PipelineStatus};
+use crate::execution::pipeline::{Pipeline, PipelineStatus};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;

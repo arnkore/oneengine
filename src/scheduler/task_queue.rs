@@ -1,4 +1,4 @@
-use crate::core::task::{Task, Priority};
+use crate::execution::task::{Task, Priority};
 use anyhow::Result;
 use std::collections::BinaryHeap;
 use std::sync::Arc;

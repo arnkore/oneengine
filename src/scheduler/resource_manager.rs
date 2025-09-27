@@ -1,4 +1,4 @@
-use crate::core::task::ResourceRequirements;
+use crate::execution::task::ResourceRequirements;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-use crate::core::task::Task;
+use crate::execution::task::Task;
 use crate::utils::config::ExecutorConfig;
 use anyhow::Result;
 use std::sync::Arc;
@@ -294,19 +294,19 @@ impl Worker {
         // Simulate task execution
         // In a real implementation, this would execute the actual task logic
         let result = match &task.task_type {
-            crate::core::task::TaskType::DataProcessing { operator, .. } => {
+            crate::execution::task::TaskType::DataProcessing { operator, .. } => {
                 self.execute_data_processing_task(task, operator).await
             }
-            crate::core::task::TaskType::DataSource { source_type, .. } => {
+            crate::execution::task::TaskType::DataSource { source_type, .. } => {
                 self.execute_data_source_task(task, source_type).await
             }
-            crate::core::task::TaskType::DataSink { sink_type, .. } => {
+            crate::execution::task::TaskType::DataSink { sink_type, .. } => {
                 self.execute_data_sink_task(task, sink_type).await
             }
-            crate::core::task::TaskType::ControlFlow { flow_type, .. } => {
+            crate::execution::task::TaskType::ControlFlow { flow_type, .. } => {
                 self.execute_control_flow_task(task, flow_type).await
             }
-            crate::core::task::TaskType::Custom { handler, .. } => {
+            crate::execution::task::TaskType::Custom { handler, .. } => {
                 self.execute_custom_task(task, handler).await
             }
         };
