@@ -225,7 +225,7 @@ impl ParquetReader {
                 if let Some(statistics) = column_metadata.statistics() {
                     // 这里应该实现具体的谓词匹配逻辑
                     // 简化实现：检查是否有null值
-                    if statistics.null_count() > 0 && matches!(predicate, crate::io::data_lake_reader::Predicate::IsNotNull { .. }) {
+                    if statistics.null_count_opt().unwrap_or(0) > 0 && matches!(predicate, crate::io::parquet_reader::Predicate::IsNotNull { .. }) {
                         return Ok(false);
                     }
                 }

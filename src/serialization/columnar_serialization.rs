@@ -71,6 +71,8 @@ pub enum CompressionAlgorithm {
     Lz4,
     /// Gzip
     Gzip,
+    /// Snappy
+    Snappy,
     /// 自适应
     Adaptive,
 }
@@ -150,7 +152,7 @@ pub struct Compressor {
 }
 
 /// 序列化统计信息
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SerializationStats {
     /// 总序列化次数
     total_serializations: AtomicU64,
@@ -278,7 +280,7 @@ impl ColumnBlockSerializer {
         let (compressed_data, compression_info) = if self.config.enable_compression {
             self.compressor.compress(&column_data, &self.config)?
         } else {
-            (column_data, CompressionInfo::new(false, CompressionAlgorithm::Zstd, 0))
+            (column_data, CompressionInfo::new(false, CompressionAlgorithm::Zstd, 0.0))
         };
 
         // 更新头信息
@@ -365,7 +367,7 @@ impl ColumnBlockSerializer {
     fn serialize_column(&self, column: &dyn Array) -> Result<Vec<u8>, String> {
         // 使用Arrow的IPC格式序列化列
         let mut buffer = Vec::new();
-        let mut writer = arrow::ipc::writer::StreamWriter::new(&mut buffer, &column.data_type())
+        let mut writer = arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &column.data_type())
             .map_err(|e| format!("Failed to create StreamWriter: {}", e))?;
         
         writer.write(column)
@@ -380,7 +382,7 @@ impl ColumnBlockSerializer {
     /// 反序列化列
     fn deserialize_column(&self, data: &[u8], column_index: usize) -> Result<ArrayRef, String> {
         let mut reader = Cursor::new(data);
-        let mut stream_reader = arrow::ipc::reader::StreamReader::new(&mut reader)
+        let mut stream_reader = arrow::ipc::reader::StreamReader::try_new(&mut reader, None)
             .map_err(|e| format!("Failed to create StreamReader: {}", e))?;
         
         let batch = stream_reader.next()
@@ -475,7 +477,7 @@ impl Compressor {
     /// 压缩数据
     pub fn compress(&self, data: &[u8], config: &SerializationConfig) -> Result<(Vec<u8>, CompressionInfo), String> {
         if !config.enable_compression || data.len() < config.compression_threshold {
-            return Ok((data.to_vec(), CompressionInfo::new(false, CompressionAlgorithm::Zstd, 0)));
+            return Ok((data.to_vec(), CompressionInfo::new(false, CompressionAlgorithm::Zstd, 0.0)));
         }
 
         let start_time = Instant::now();

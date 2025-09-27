@@ -308,8 +308,7 @@ impl PushScheduler {
                                 operator_type: OperatorType::Aggregate { 
                                     group_columns: vec![0],
                                     agg_functions: vec![AggregationFunction::Count {
-                                        column: "id".to_string(),
-                                        output_column: "count".to_string(),
+                                        output_column: 0,
                                     }],
                                 },
                                 input_ports,

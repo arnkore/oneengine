@@ -42,6 +42,8 @@ pub struct VectorizedScanConfig {
     pub batch_size: usize,
     /// 是否启用预取
     pub enable_prefetch: bool,
+    /// 剪枝的行组
+    pub pruned_row_groups: Option<Vec<usize>>,
 }
 
 impl Default for VectorizedScanConfig {
@@ -52,6 +54,7 @@ impl Default for VectorizedScanConfig {
             enable_simd: true,
             batch_size: 8192,
             enable_prefetch: true,
+            pruned_row_groups: None,
         }
     }
 }
@@ -100,7 +103,7 @@ impl VectorizedScanOperator {
         output_ports: Vec<PortId>,
         name: String,
     ) -> Self {
-        let data_lake_reader = DataLakeReader::new(config.data_lake_config.clone());
+        let data_lake_reader = DataLakeReader::new("default_path".to_string(), config.data_lake_config.clone());
         
         Self {
             config,

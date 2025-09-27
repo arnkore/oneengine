@@ -78,32 +78,32 @@ impl Default for VectorizedAggregatorConfig {
 /// 聚合函数类型
 #[derive(Debug, Clone)]
 pub enum AggregationFunction {
-    Count,
-    Sum { column: usize },
-    Avg { column: usize },
-    Min { column: usize },
-    Max { column: usize },
-    First { column: usize },
-    Last { column: usize },
-    StdDev { column: usize },
-    Variance { column: usize },
-    Median { column: usize },
-    Percentile { column: usize, percentile: f64 },
-    DistinctCount { column: usize },
-    CollectList { column: usize },
-    CollectSet { column: usize },
+    Count { output_column: usize },
+    Sum { column: usize, output_column: usize },
+    Avg { column: usize, output_column: usize },
+    Min { column: usize, output_column: usize },
+    Max { column: usize, output_column: usize },
+    First { column: usize, output_column: usize },
+    Last { column: usize, output_column: usize },
+    StdDev { column: usize, output_column: usize },
+    Variance { column: usize, output_column: usize },
+    Median { column: usize, output_column: usize },
+    Percentile { column: usize, percentile: f64, output_column: usize },
+    DistinctCount { column: usize, output_column: usize },
+    CollectList { column: usize, output_column: usize },
+    CollectSet { column: usize, output_column: usize },
 }
 
 /// 聚合状态
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AggregationState {
     Count { count: u64 },
     Sum { sum: ScalarValue },
     Avg { sum: ScalarValue, count: u64 },
-    Min { min: ScalarValue },
-    Max { max: ScalarValue },
-    First { first: ScalarValue },
-    Last { last: ScalarValue },
+    Min { min: Option<ScalarValue> },
+    Max { max: Option<ScalarValue> },
+    First { first: Option<ScalarValue> },
+    Last { last: Option<ScalarValue> },
     StdDev { sum: ScalarValue, sum_squares: ScalarValue, count: u64 },
     Variance { sum: ScalarValue, sum_squares: ScalarValue, count: u64 },
     Median { values: Vec<ScalarValue> },
@@ -330,13 +330,13 @@ impl VectorizedAggregator {
     fn create_initial_agg_states(&self) -> Vec<AggregationState> {
         self.agg_functions.iter().map(|func| {
             match func {
-                AggregationFunction::Count => AggregationState::Count { count: 0 },
+                AggregationFunction::Count { .. } => AggregationState::Count { count: 0 },
                 AggregationFunction::Sum { .. } => AggregationState::Sum { sum: ScalarValue::Int64(Some(0)) },
                 AggregationFunction::Avg { .. } => AggregationState::Avg { sum: ScalarValue::Int64(Some(0)), count: 0 },
-                AggregationFunction::Min { .. } => AggregationState::Min { min: ScalarValue::Int64(Some(i64::MAX)) },
-                AggregationFunction::Max { .. } => AggregationState::Max { max: ScalarValue::Int64(Some(i64::MIN)) },
-                AggregationFunction::First { .. } => AggregationState::First { first: ScalarValue::Int64(Some(0)) },
-                AggregationFunction::Last { .. } => AggregationState::Last { last: ScalarValue::Int64(Some(0)) },
+                AggregationFunction::Min { .. } => AggregationState::Min { min: None },
+                AggregationFunction::Max { .. } => AggregationState::Max { max: None },
+                AggregationFunction::First { .. } => AggregationState::First { first: None },
+                AggregationFunction::Last { .. } => AggregationState::Last { last: None },
                 AggregationFunction::StdDev { .. } => AggregationState::StdDev { 
                     sum: ScalarValue::Float64(Some(0.0)), 
                     sum_squares: ScalarValue::Float64(Some(0.0)), 
@@ -876,12 +876,12 @@ impl Operator for VectorizedAggregator {
                         },
                         Err(e) => {
                             warn!("向量化聚合失败: {}", e);
-                            OpStatus::Error("Aggregation evaluation failed".to_string())
+                            OpStatus::Error(format!("Aggregation evaluation failed: {}", e))
                         }
                     }
                 } else {
                     warn!("未知的输入端口: {}", port);
-                    OpStatus::Error
+                    OpStatus::Error("未知的输入端口".to_string())
                 }
             },
             Event::EndOfStream { port } => {

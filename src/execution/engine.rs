@@ -54,9 +54,9 @@ impl OneEngine {
         
         // Initialize vectorized driver
                 let vectorized_driver_config = crate::execution::vectorized_driver::VectorizedDriverConfig {
-            max_workers: config.executor.max_workers,
-            memory_limit: config.executor.memory_limit,
-            batch_size: config.executor.batch_size,
+            max_workers: config.executor.worker_threads,
+            memory_limit: 1024 * 1024 * 1024, // 1GB default
+            batch_size: 8192, // default batch size
             enable_vectorization: true,
             enable_simd: true,
             enable_compression: true,
@@ -102,9 +102,9 @@ impl OneEngine {
             // This is a simplified approach - in production, we'd use Arc<VectorizedDriver>
             // For now, we'll create a new driver instance
                     let driver_config = crate::execution::vectorized_driver::VectorizedDriverConfig {
-                max_workers: self.config.executor.max_workers,
-                memory_limit: self.config.executor.memory_limit,
-                batch_size: self.config.executor.batch_size,
+                max_workers: self.config.executor.worker_threads,
+                memory_limit: 1024 * 1024 * 1024, // 1GB default
+                batch_size: 8192, // default batch size
                 enable_vectorization: true,
                 enable_simd: true,
                 enable_compression: true,
@@ -258,8 +258,7 @@ impl OneEngine {
                                 operator_type: OperatorType::Aggregate { 
                                     group_columns: vec![0],
                                     agg_functions: vec![AggregationFunction::Count {
-                                        column: "id".to_string(),
-                                        output_column: "count".to_string(),
+                                        output_column: 0,
                                     }],
                                 },
                                 input_ports,

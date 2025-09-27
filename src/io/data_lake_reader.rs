@@ -1005,9 +1005,9 @@ pub struct DataLakeReaderSync {
 }
 
 impl DataLakeReaderSync {
-    pub fn new(config: DataLakeReaderConfig) -> Self {
+    pub fn new(file_path: String, config: DataLakeReaderConfig) -> Self {
         Self {
-            reader: DataLakeReader::new(config),
+            reader: DataLakeReader::new(file_path, config),
         }
     }
 
