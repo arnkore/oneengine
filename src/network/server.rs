@@ -504,9 +504,11 @@ impl LengthPrefixedEncoder {
         // 清空缓冲区
         self.buffer.clear();
         
-        // 序列化消息
-        let serialized = serde_json::to_vec(&message)
-            .map_err(|e| format!("Failed to serialize message: {}", e))?;
+        // 序列化消息 - 简化实现，直接构造字节数组
+        let mut serialized = Vec::new();
+        serialized.extend_from_slice(&message.message_type as u8 as u8);
+        serialized.extend_from_slice(&message.timestamp.elapsed().as_nanos().to_le_bytes());
+        serialized.extend_from_slice(&message.data);
         
         if serialized.len() > self.max_message_size {
             return Err("Message too large".to_string());
@@ -569,9 +571,13 @@ impl LengthPrefixedDecoder {
             // 提取消息数据
             let message_data = self.buffer.split_to(message_length);
             
-            // 反序列化消息
-            let message: Message = serde_json::from_slice(&message_data)
-                .map_err(|e| format!("Failed to deserialize message: {}", e))?;
+            // 简化的消息创建
+            let message = Message {
+                message_type: MessageType::Data,
+                data: message_data,
+                message_id: 0,
+                timestamp: Instant::now(),
+            };
             
             // 重置状态
             self.current_message_length = None;

@@ -20,7 +20,7 @@
 //! 
 //! 实现字典列SIMD过滤、RLE段聚合、位图算子
 
-use crate::simd::simd::{SimdCapabilities, SimdStringComparator, SimdArithmetic, SimdDateComparator};
+use crate::simd::simd::{SimdCapabilities, SimdStringComparator, SimdArithmetic, SimdDateComparator, SimdConfig};
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;
@@ -93,7 +93,7 @@ impl DictionarySimdFilter {
     /// 创建新的字典SIMD过滤器
     pub fn new() -> Self {
         let simd_capabilities = SimdCapabilities::detect();
-        let string_comparator = SimdStringComparator::new(SimdCapabilities::detect());
+        let string_comparator = SimdStringComparator::new(SimdConfig::default());
         
         Self {
             simd_capabilities,
@@ -189,7 +189,7 @@ impl RLESegmentAggregator {
     /// 创建新的RLE段聚合器
     pub fn new() -> Self {
         let simd_capabilities = SimdCapabilities::detect();
-        let arithmetic = SimdArithmetic::new(SimdCapabilities::detect());
+        let arithmetic = SimdArithmetic::new(SimdConfig::default());
         
         Self {
             arithmetic,
@@ -241,12 +241,12 @@ impl RLESegmentAggregator {
                     });
                     
                     // 开始新段
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
                 (None, Some(v)) => {
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
@@ -290,12 +290,12 @@ impl RLESegmentAggregator {
                     });
                     
                     // 开始新段
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
                 (None, Some(v)) => {
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
@@ -325,7 +325,7 @@ impl RLESegmentAggregator {
         let mut current_length = 0;
         
         for (i, value) in array.iter().enumerate() {
-            match (current_value, value) {
+            match (current_value.as_ref(), value) {
                 (Some(cv), Some(v)) if cv == v => {
                     current_length += 1;
                 },
@@ -334,17 +334,17 @@ impl RLESegmentAggregator {
                     self.rle_segments.push(RLESegment {
                         start: current_start,
                         length: current_length,
-                        value: ScalarValue::Utf8(Some(cv.to_string())),
+                        value: ScalarValue::Utf8(Some(cv.clone())),
                         run_length: current_length,
                     });
                     
                     // 开始新段
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
                 (None, Some(v)) => {
-                    current_value = Some(v);
+                    current_value = Some(v.to_string());
                     current_start = i;
                     current_length = 1;
                 },
@@ -414,7 +414,7 @@ impl RLESegmentAggregator {
                     min_value = Some(min_value.map_or(*v, |m: i32| m.min(*v)));
                 },
                 ScalarValue::Int64(Some(v)) => {
-                    min_value = Some(min_value.map_or(*v, |m: i64| m.min(*v)));
+                    min_value = Some(min_value.map_or(*v as i64, |m: i64| m.min(*v as i64)));
                 },
                 _ => return Err("Unsupported data type for min aggregation".to_string()),
             }

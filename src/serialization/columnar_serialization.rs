@@ -359,7 +359,7 @@ impl ColumnBlockSerializer {
 
         // 创建RecordBatch
         let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(columns.iter().map(|c| c.data_type().clone()).collect::<Vec<_>>())),
+            Arc::new(Schema::new(columns.iter().map(|c| Field::new("col", c.data_type().clone(), true)).collect())),
             columns
         ).map_err(|e| format!("Failed to create RecordBatch: {}", e))?;
 
