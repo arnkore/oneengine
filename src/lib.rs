@@ -11,7 +11,7 @@ pub mod columnar;
 pub mod execution;
 pub mod push_runtime;
 pub mod io;
-pub mod optimization;
+pub mod simd;
 pub mod concurrency;
 pub mod network;
 pub mod serialization;

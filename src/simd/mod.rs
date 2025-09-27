@@ -1,6 +1,6 @@
-//! 优化模块
+//! SIMD优化模块
 //! 
-//! 提供SIMD优化、JIT编译、NUMA感知等高性能优化功能
+//! 提供SIMD优化、压缩计算等高性能优化功能
 
 pub mod simd;
 pub mod compressed_compute;

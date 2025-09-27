@@ -2,7 +2,7 @@
 //! 
 //! 实现字典列SIMD过滤、RLE段聚合、位图算子
 
-use crate::optimization::simd::{SimdCapabilities, SimdStringComparator, SimdArithmetic, SimdDateComparator};
+use crate::simd::simd::{SimdCapabilities, SimdStringComparator, SimdArithmetic, SimdDateComparator};
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;
