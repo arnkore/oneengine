@@ -355,7 +355,7 @@ impl ExtremeObservability {
     /// 记录查询执行
     pub fn record_query_execution(&self, fingerprint: String, stats: QueryExecutionStats) {
         let mut query_stats = self.metrics_collector.query_execution_stats.lock().unwrap();
-        query_stats.insert(fingerprint, stats);
+        query_stats.insert(fingerprint.clone(), stats.clone());
         
         // 更新查询指纹缓存
         let mut cache = self.query_fingerprint_cache.lock().unwrap();
@@ -609,9 +609,9 @@ impl AutoTuner {
                 .sum::<f64>() / recent_records.len() as f64;
             
             if avg_throughput > self.performance_targets.target_throughput {
-                config.batch_size = (config.batch_size * 1.2) as usize;
+                config.batch_size = (config.batch_size as f64 * 1.2) as usize;
             } else {
-                config.batch_size = (config.batch_size * 0.8) as usize;
+                config.batch_size = (config.batch_size as f64 * 0.8) as usize;
             }
         }
         
@@ -627,10 +627,10 @@ impl AutoTuner {
         if let Some(last_record) = self.tuning_history.back() {
             if last_record.improvement > 0.0 {
                 // 正奖励，继续当前方向
-                config.batch_size = (config.batch_size * 1.1) as usize;
+                config.batch_size = (config.batch_size as f64 * 1.1) as usize;
             } else {
                 // 负奖励，改变方向
-                config.batch_size = (config.batch_size * 0.9) as usize;
+                config.batch_size = (config.batch_size as f64 * 0.9) as usize;
             }
         }
         

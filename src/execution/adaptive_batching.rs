@@ -265,7 +265,7 @@ impl AdaptiveBatchingManager {
         let block_adjustment = self.adjust_based_on_block_time(metrics);
         
         // 综合考虑两种策略
-        match (cache_adjustment, block_adjustment) {
+        match (cache_adjustment.clone(), block_adjustment.clone()) {
             (BatchAdjustment::Decrease(_), BatchAdjustment::Decrease(_)) => {
                 // 两种策略都建议减少，取更大的减少量
                 let cache_decrease = if let BatchAdjustment::Decrease(d) = cache_adjustment { d } else { 0 };
