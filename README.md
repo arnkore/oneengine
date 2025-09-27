@@ -2,6 +2,12 @@
 
 OneEngine is a high-performance, unified native execution engine designed to serve as a worker for multiple big data processing frameworks including Spark, Flink, Trino, and Presto. Built with Rust for maximum performance and memory safety, OneEngine implements a columnar, vectorized execution model optimized to surpass Doris/StarRocks performance.
 
+## 📚 Documentation
+
+For detailed technical documentation, architecture overview, and integration reports, please visit the [docs directory](./docs/README.md).
+
+## 🚀 Quick Start
+
 ## Features
 
 ### Phase 0 - Foundation (✅ Completed)
