@@ -489,7 +489,21 @@ where
             }
         }
 
-        None // 简化实现，不返回旧值
+        // 检查是否有相同的键被替换
+        let mut current = prev_bucket;
+        while !current.is_null() {
+            unsafe {
+                let bucket = &*current;
+                if bucket.key == key {
+                    // 找到相同键，返回旧值
+                    return Some(bucket.value.clone());
+                }
+                current = bucket.next.load(Ordering::Acquire);
+            }
+        }
+
+        // 没有找到相同键，返回None
+        None
     }
 
     /// 获取值

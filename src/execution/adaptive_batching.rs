@@ -274,39 +274,92 @@ impl AdaptiveBatchingManager {
     
     /// 机器学习策略调整
     fn adjust_with_ml(&self, metrics: &PerformanceSnapshot) -> BatchAdjustment {
-        // 简化的ML策略实现
-        // 实际实现中需要使用训练好的模型进行预测
-        
+        // 基于机器学习的批处理大小调整策略
         if self.performance_history.len() < 10 {
             return BatchAdjustment::Keep;
         }
         
-        // 计算性能趋势
-        let recent_metrics = &self.performance_history[self.performance_history.len()-10..];
-        let avg_throughput: f64 = recent_metrics.iter().map(|m| m.throughput).sum::<f64>() / recent_metrics.len() as f64;
-        let current_throughput = metrics.throughput;
+        // 准备特征向量
+        let features = self.extract_features(metrics);
         
-        if current_throughput > avg_throughput * 1.1 {
-            // 性能提升，可以尝试增加批量大小
-            let new_size = (metrics.batch_size as f64 * 1.1) as usize;
-            let new_size = new_size.min(self.max_batch_size);
-            if new_size > metrics.batch_size {
-                BatchAdjustment::Increase(new_size - metrics.batch_size)
-            } else {
-                BatchAdjustment::Keep
-            }
-        } else if current_throughput < avg_throughput * 0.9 {
-            // 性能下降，减少批量大小
-            let new_size = (metrics.batch_size as f64 * 0.9) as usize;
-            let new_size = new_size.max(self.min_batch_size);
-            if new_size < metrics.batch_size {
-                BatchAdjustment::Decrease(metrics.batch_size - new_size)
-            } else {
-                BatchAdjustment::Keep
-            }
+        // 使用线性回归模型预测最佳批处理大小
+        let predicted_batch_size = self.predict_optimal_batch_size(&features);
+        let current_batch_size = self.current_batch_size.load(Ordering::Relaxed);
+        
+        // 计算调整比例
+        let adjustment_ratio = predicted_batch_size as f64 / current_batch_size as f64;
+        
+        if adjustment_ratio > 1.2 {
+            let increase = ((predicted_batch_size - current_batch_size) as f64 * 0.8) as usize;
+            BatchAdjustment::Increase(increase)
+        } else if adjustment_ratio < 0.8 {
+            let decrease = ((current_batch_size - predicted_batch_size) as f64 * 0.8) as usize;
+            BatchAdjustment::Decrease(decrease)
         } else {
             BatchAdjustment::Keep
         }
+    }
+    
+    /// 提取特征向量
+    fn extract_features(&self, metrics: &PerformanceSnapshot) -> Vec<f64> {
+        let mut features = Vec::new();
+        
+        // 基础性能指标
+        features.push(metrics.throughput);
+        features.push(metrics.l2_miss_rate);
+        features.push(metrics.l3_miss_rate);
+        features.push(metrics.operator_blocking_time.as_millis() as f64);
+        features.push(metrics.memory_usage as f64);
+        
+        // 历史趋势特征
+        if self.performance_history.len() >= 5 {
+            let recent_metrics = &self.performance_history[self.performance_history.len()-5..];
+            let avg_throughput: f64 = recent_metrics.iter().map(|m| m.throughput).sum::<f64>() / recent_metrics.len() as f64;
+            let throughput_trend = (metrics.throughput - avg_throughput) / avg_throughput;
+            features.push(throughput_trend);
+            
+            let avg_l2_miss: f64 = recent_metrics.iter().map(|m| m.l2_miss_rate).sum::<f64>() / recent_metrics.len() as f64;
+            let l2_trend = (metrics.l2_miss_rate - avg_l2_miss) / avg_l2_miss.max(0.001);
+            features.push(l2_trend);
+        } else {
+            features.push(0.0); // 默认趋势
+            features.push(0.0);
+        }
+        
+        // 系统负载特征
+        features.push(self.current_batch_size.load(Ordering::Relaxed) as f64);
+        features.push(metrics.cpu_usage);
+        features.push(metrics.memory_pressure);
+        
+        features
+    }
+    
+    /// 预测最佳批处理大小
+    fn predict_optimal_batch_size(&self, features: &[f64]) -> usize {
+        // 简化的线性回归模型
+        // 实际实现中应该使用训练好的模型
+        let weights = vec![
+            0.1,   // throughput
+            -0.05, // l2_miss_rate
+            -0.03, // l3_miss_rate
+            -0.02, // operator_blocking_time
+            -0.01, // memory_usage
+            0.15,  // throughput_trend
+            -0.08, // l2_trend
+            0.2,   // current_batch_size
+            -0.1,  // cpu_usage
+            -0.05, // memory_pressure
+        ];
+        
+        let bias = 1000.0; // 基础批处理大小
+        
+        let prediction = bias + features.iter()
+            .zip(weights.iter())
+            .map(|(f, w)| f * w)
+            .sum::<f64>();
+        
+        // 限制在合理范围内
+        prediction.max(100.0).min(10000.0) as usize
     }
     
     /// 应用调整

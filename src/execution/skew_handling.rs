@@ -412,10 +412,24 @@ impl SkewHandler {
         // 将批次按重尾键分组
         let mut partitioned_batches = vec![Vec::new(); partition_count];
         
-        // 这里需要实现具体的分区逻辑
-        // 简化实现：将批次分配到不同分区
-        for (i, row_batch) in self.split_batch_by_rows(batch, partition_count) {
-            partitioned_batches[i].push(row_batch);
+        // 实现基于重尾键的分区逻辑
+        let mut key_to_partition = std::collections::HashMap::new();
+        
+        // 为每个重尾键分配一个专门的分区
+        for (i, key) in heavy_tail_keys.iter().enumerate() {
+            key_to_partition.insert(key.clone(), i);
+        }
+        
+        // 将批次按键值分配到不同分区
+        let batches_by_key = self.split_batch_by_keys(batch, &heavy_tail_keys)?;
+        
+        for (key, key_batches) in batches_by_key {
+            if let Some(&partition_id) = key_to_partition.get(&key) {
+                partitioned_batches[partition_id].extend(key_batches);
+            } else {
+                // 非重尾键分配到最后一个分区
+                partitioned_batches[partition_count - 1].extend(key_batches);
+            }
         }
         
         // 发送分区后的批次
@@ -497,7 +511,7 @@ impl SkewHandler {
     
     /// 按行分割批次
     fn split_batch_by_rows(&self, batch: RecordBatch, partition_count: usize) -> Vec<(usize, RecordBatch)> {
-        // 简化实现：将批次平均分配到各个分区
+        // 将批次平均分配到各个分区
         let rows_per_partition = batch.num_rows() / partition_count;
         let mut result = Vec::new();
         
@@ -510,13 +524,89 @@ impl SkewHandler {
             };
             
             if start_row < end_row {
-                // 这里需要实现具体的行分割逻辑
-                // 简化实现：返回原批次
-                result.push((i, batch.clone()));
+                // 实现具体的行分割逻辑
+                let partition_batch = batch.slice(start_row, end_row - start_row);
+                result.push((i, partition_batch));
             }
         }
         
         result
+    }
+    
+    /// 按键值分割批次
+    fn split_batch_by_keys(&self, batch: &RecordBatch, heavy_tail_keys: &[String]) -> Result<HashMap<String, Vec<RecordBatch>>, String> {
+        use arrow::array::*;
+        use arrow::datatypes::*;
+        
+        let mut key_to_batches: HashMap<String, Vec<RecordBatch>> = HashMap::new();
+        
+        // 假设第一列是键列
+        if batch.num_columns() == 0 {
+            return Ok(key_to_batches);
+        }
+        
+        let key_column = batch.column(0);
+        let schema = batch.schema();
+        
+        // 根据键列类型进行分组
+        match key_column.data_type() {
+            DataType::Utf8 => {
+                if let Some(string_array) = key_column.as_any().downcast_ref::<StringArray>() {
+                    for (row_idx, key_opt) in string_array.iter().enumerate() {
+                        if let Some(key) = key_opt {
+                            let key_str = key.to_string();
+                            
+                            // 检查是否在重尾键列表中
+                            if heavy_tail_keys.contains(&key_str) {
+                                // 创建单行批次
+                                let single_row_batch = self.create_single_row_batch(batch, row_idx)?;
+                                
+                                key_to_batches.entry(key_str)
+                                    .or_insert_with(Vec::new)
+                                    .push(single_row_batch);
+                            }
+                        }
+                    }
+                }
+            },
+            DataType::Int32 => {
+                if let Some(int_array) = key_column.as_any().downcast_ref::<Int32Array>() {
+                    for (row_idx, key_opt) in int_array.iter().enumerate() {
+                        if let Some(key) = key_opt {
+                            let key_str = key.to_string();
+                            
+                            if heavy_tail_keys.contains(&key_str) {
+                                let single_row_batch = self.create_single_row_batch(batch, row_idx)?;
+                                
+                                key_to_batches.entry(key_str)
+                                    .or_insert_with(Vec::new)
+                                    .push(single_row_batch);
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {
+                // 对于其他类型，使用默认分组
+                let default_batch = batch.clone();
+                key_to_batches.insert("default".to_string(), vec![default_batch]);
+            }
+        }
+        
+        Ok(key_to_batches)
+    }
+    
+    /// 创建单行批次
+    fn create_single_row_batch(&self, batch: &RecordBatch, row_idx: usize) -> Result<RecordBatch, String> {
+        let mut single_row_columns = Vec::new();
+        
+        for column in batch.columns() {
+            let single_row_array = column.slice(row_idx, 1);
+            single_row_columns.push(single_row_array);
+        }
+        
+        RecordBatch::try_new(batch.schema(), single_row_columns)
+            .map_err(|e| format!("Failed to create single row batch: {}", e))
     }
     
     /// 获取性能统计

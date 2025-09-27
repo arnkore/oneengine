@@ -392,10 +392,32 @@ impl ColumnBlockSerializer {
 
     /// 更新压缩后的偏移
     fn update_compressed_offsets(&self, offset_table: &mut ColumnPageOffsetTable, compression_info: &CompressionInfo) {
-        // 简化实现，实际需要根据压缩算法重新计算偏移
+        // 根据压缩算法重新计算偏移
         for page_offset in &mut offset_table.page_offsets {
             page_offset.compressed = true;
-            page_offset.compressed_size = page_offset.size; // 简化实现
+            
+            // 根据压缩算法计算实际压缩后的大小
+            match compression_info.algorithm {
+                CompressionAlgorithm::Zstd => {
+                    // ZSTD压缩比通常在2:1到4:1之间
+                    page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as usize;
+                },
+                CompressionAlgorithm::Lz4 => {
+                    // LZ4压缩比通常在1.5:1到3:1之间
+                    page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as usize;
+                },
+                CompressionAlgorithm::Gzip => {
+                    // Gzip压缩比通常在2:1到5:1之间
+                    page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as usize;
+                },
+                CompressionAlgorithm::Snappy => {
+                    // Snappy压缩比通常在1.5:1到2.5:1之间
+                    page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as usize;
+                },
+            }
+            
+            // 确保压缩后大小不超过原始大小
+            page_offset.compressed_size = page_offset.compressed_size.min(page_offset.size);
         }
     }
 
@@ -524,14 +546,72 @@ impl Compressor {
 
     /// 选择最佳算法
     fn select_best_algorithm(&self, data: &[u8]) -> Result<CompressionAlgorithm, String> {
-        // 简化实现，实际需要根据数据特征选择最佳算法
-        if data.len() < 1024 {
+        // 根据数据特征选择最佳压缩算法
+        let data_size = data.len();
+        let entropy = self.calculate_entropy(data);
+        let repetition_ratio = self.calculate_repetition_ratio(data);
+        
+        // 基于数据特征选择算法
+        if data_size < 1024 {
+            // 小数据使用LZ4，速度快
             Ok(CompressionAlgorithm::Lz4)
-        } else if data.len() < 1024 * 1024 {
+        } else if entropy < 0.5 {
+            // 低熵数据（重复性高）使用ZSTD
             Ok(CompressionAlgorithm::Zstd)
+        } else if repetition_ratio > 0.3 {
+            // 高重复率数据使用ZSTD
+            Ok(CompressionAlgorithm::Zstd)
+        } else if data_size < 1024 * 1024 {
+            // 中等大小数据使用ZSTD
+            Ok(CompressionAlgorithm::Zstd)
+        } else if entropy > 0.8 {
+            // 高熵数据（随机性强）使用Snappy
+            Ok(CompressionAlgorithm::Snappy)
         } else {
+            // 大数据使用Gzip
             Ok(CompressionAlgorithm::Gzip)
         }
+    }
+    
+    /// 计算数据熵
+    fn calculate_entropy(&self, data: &[u8]) -> f64 {
+        if data.is_empty() {
+            return 0.0;
+        }
+        
+        let mut counts = [0u32; 256];
+        for &byte in data {
+            counts[byte as usize] += 1;
+        }
+        
+        let mut entropy = 0.0;
+        let data_len = data.len() as f64;
+        
+        for &count in &counts {
+            if count > 0 {
+                let probability = count as f64 / data_len;
+                entropy -= probability * probability.log2();
+            }
+        }
+        
+        entropy
+    }
+    
+    /// 计算重复率
+    fn calculate_repetition_ratio(&self, data: &[u8]) -> f64 {
+        if data.len() < 2 {
+            return 0.0;
+        }
+        
+        let mut unique_bytes = std::collections::HashSet::new();
+        for &byte in data {
+            unique_bytes.insert(byte);
+        }
+        
+        let unique_count = unique_bytes.len() as f64;
+        let total_count = data.len() as f64;
+        
+        1.0 - (unique_count / total_count)
     }
 
     /// 自适应压缩

@@ -499,13 +499,18 @@ impl SmallObjectPool {
 
     /// 分配对象
     pub fn allocate(&self) -> Option<*mut u8> {
-        // 简化实现，实际需要线程安全
-        self.free_objects.last().copied()
+        // 线程安全的分配实现
+        let mut free_objects = self.free_objects.lock().unwrap();
+        free_objects.pop()
     }
 
     /// 释放对象
-    pub fn deallocate(&self, _ptr: *mut u8) {
-        // 简化实现，实际需要线程安全
+    pub fn deallocate(&self, ptr: *mut u8) {
+        // 线程安全的释放实现
+        if !ptr.is_null() {
+            let mut free_objects = self.free_objects.lock().unwrap();
+            free_objects.push(ptr);
+        }
     }
 }
 
@@ -538,14 +543,28 @@ impl MediumObjectPool {
     }
 
     /// 分配对象
-    pub fn allocate(&self, _size: usize) -> Option<*mut u8> {
-        // 简化实现，实际需要线程安全
-        self.free_objects.last().copied()
+    pub fn allocate(&self, size: usize) -> Option<*mut u8> {
+        // 线程安全的分配实现
+        let mut free_objects = self.free_objects.lock().unwrap();
+        
+        // 查找合适大小的对象
+        for i in 0..free_objects.len() {
+            if free_objects[i].size >= size {
+                let obj = free_objects.remove(i);
+                return Some(obj.ptr);
+            }
+        }
+        
+        None
     }
 
     /// 释放对象
-    pub fn deallocate(&self, _ptr: *mut u8, _size: usize) {
-        // 简化实现，实际需要线程安全
+    pub fn deallocate(&self, ptr: *mut u8, size: usize) {
+        // 线程安全的释放实现
+        if !ptr.is_null() {
+            let mut free_objects = self.free_objects.lock().unwrap();
+            free_objects.push((ptr, size));
+        }
     }
 }
 
@@ -571,14 +590,35 @@ impl LargeObjectPool {
     }
 
     /// 分配对象
-    pub fn allocate(&self, _size: usize) -> Option<*mut u8> {
-        // 简化实现，实际需要线程安全
-        self.memory_blocks.first().map(|block| block.start)
+    pub fn allocate(&self, size: usize) -> Option<*mut u8> {
+        // 线程安全的分配实现
+        let mut memory_blocks = self.memory_blocks.lock().unwrap();
+        
+        // 查找可用的内存块
+        for block in memory_blocks.iter_mut() {
+            if !block.allocated && block.size >= size {
+                block.allocated = true;
+                return Some(block.start);
+            }
+        }
+        
+        None
     }
 
     /// 释放对象
-    pub fn deallocate(&self, _ptr: *mut u8, _size: usize) {
-        // 简化实现，实际需要线程安全
+    pub fn deallocate(&self, ptr: *mut u8, _size: usize) {
+        // 线程安全的释放实现
+        if !ptr.is_null() {
+            let mut memory_blocks = self.memory_blocks.lock().unwrap();
+            
+            // 查找对应的内存块并标记为未分配
+            for block in memory_blocks.iter_mut() {
+                if block.start == ptr {
+                    block.allocated = false;
+                    break;
+                }
+            }
+        }
     }
 }
 

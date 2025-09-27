@@ -377,14 +377,68 @@ impl ExtremeObservability {
         let rf_hit_rate = *self.metrics_collector.rf_hit_rate.lock().unwrap();
         let spill_ratio = *self.metrics_collector.spill_ratio.lock().unwrap();
         
-        // 这里需要从其他指标计算执行时间、内存使用等
-        // 简化实现
+        // 从系统指标计算实际性能指标
+        let execution_time = self.calculate_execution_time();
+        let memory_usage = self.calculate_memory_usage();
+        let throughput = self.calculate_throughput();
+        let error_rate = self.calculate_error_rate();
+        
         PerformanceMetrics {
-            execution_time: Duration::from_millis(100),
-            memory_usage: 1024 * 1024, // 1MB
-            throughput: 1000.0,
-            error_rate: 0.01,
+            execution_time,
+            memory_usage,
+            throughput,
+            error_rate,
             cache_hit_rate: rf_hit_rate,
+        }
+    }
+    
+    /// 计算执行时间
+    fn calculate_execution_time(&self) -> Duration {
+        // 基于历史数据计算平均执行时间
+        let total_operations = self.metrics_collector.total_operations.load(Ordering::Relaxed);
+        let total_time = self.metrics_collector.total_execution_time.load(Ordering::Relaxed);
+        
+        if total_operations > 0 {
+            Duration::from_nanos(total_time / total_operations as u64)
+        } else {
+            Duration::from_millis(100) // 默认值
+        }
+    }
+    
+    /// 计算内存使用量
+    fn calculate_memory_usage(&self) -> usize {
+        // 基于当前内存分配和缓存使用情况
+        let base_memory = 1024 * 1024; // 基础内存1MB
+        let cache_memory = self.metrics_collector.cache_size.load(Ordering::Relaxed);
+        let spill_ratio = *self.metrics_collector.spill_ratio.lock().unwrap();
+        let spill_memory = (self.metrics_collector.spill_size.load(Ordering::Relaxed) as f64 * spill_ratio) as usize;
+        
+        base_memory + cache_memory + spill_memory
+    }
+    
+    /// 计算吞吐量
+    fn calculate_throughput(&self) -> f64 {
+        // 基于处理的行数和执行时间计算吞吐量
+        let total_rows = self.metrics_collector.total_rows_processed.load(Ordering::Relaxed);
+        let execution_time = self.calculate_execution_time();
+        
+        if execution_time.as_nanos() > 0 {
+            total_rows as f64 / execution_time.as_secs_f64()
+        } else {
+            1000.0 // 默认值
+        }
+    }
+    
+    /// 计算错误率
+    fn calculate_error_rate(&self) -> f64 {
+        // 基于错误计数和总操作数计算错误率
+        let total_errors = self.metrics_collector.total_errors.load(Ordering::Relaxed);
+        let total_operations = self.metrics_collector.total_operations.load(Ordering::Relaxed);
+        
+        if total_operations > 0 {
+            total_errors as f64 / total_operations as f64
+        } else {
+            0.01 // 默认值1%
         }
     }
 }
