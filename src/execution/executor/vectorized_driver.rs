@@ -7,7 +7,7 @@ use crate::execution::operators::vectorized_filter::*;
 use crate::execution::operators::vectorized_projector::*;
 use crate::execution::operators::vectorized_aggregator::*;
 use crate::io::vectorized_scan_operator::*;
-use crate::executor::worker::Worker;
+use crate::execution::executor::worker::Worker;
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;

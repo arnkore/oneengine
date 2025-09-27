@@ -9,3 +9,4 @@ pub mod numa_pipeline;
 pub mod adaptive_batching;
 pub mod skew_handling;
 pub mod extreme_observability;
+pub mod executor;

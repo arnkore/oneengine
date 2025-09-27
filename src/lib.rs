@@ -5,7 +5,6 @@
 
 pub mod core;
 pub mod scheduler;
-pub mod executor;
 pub mod protocol;
 pub mod memory;
 pub mod utils;
