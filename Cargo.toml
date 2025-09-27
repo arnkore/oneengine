@@ -31,15 +31,19 @@ parking_lot = "0.12"
 futures = "0.3"
 
 # Apache Arrow ecosystem
-arrow = { version = "56.0", features = ["ipc"] }
-parquet = { version = "56.0", features = ["arrow"] }
-arrow-flight = "56.0"
-arrow-row = "56.0"
+arrow = { version = "53.4", features = ["ipc"] }
+parquet = { version = "53.4", features = ["arrow"] }
+arrow-flight = "53.4"
+arrow-row = "53.4"
 async-stream = "0.3"
 tokio-stream = "0.1"
 
 # ORC support
 orc-rs = "0.1.5"
+
+# Iceberg support
+iceberg = "0.4"
+object_store = "0.10"
 
 # Memory management
 bytes = "1.5"
