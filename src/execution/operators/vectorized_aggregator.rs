@@ -375,43 +375,43 @@ impl VectorizedAggregator {
                     }
                 },
                 AggregationFunction::Sum { column } => {
-                    Self::update_sum_state(self, state, batch, *column, row_idx)?;
+                    Self::update_sum_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Avg { column } => {
-                    Self::update_avg_state(self, state, batch, *column, row_idx)?;
+                    Self::update_avg_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Min { column } => {
-                    Self::update_min_state(self, state, batch, *column, row_idx)?;
+                    Self::update_min_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Max { column } => {
-                    Self::update_max_state(self, state, batch, *column, row_idx)?;
+                    Self::update_max_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::First { column } => {
-                    Self::update_first_state(self, state, batch, *column, row_idx)?;
+                    Self::update_first_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Last { column } => {
-                    Self::update_last_state(self, state, batch, *column, row_idx)?;
+                    Self::update_last_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::StdDev { column } => {
-                    Self::update_stddev_state(self, state, batch, *column, row_idx)?;
+                    Self::update_stddev_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Variance { column } => {
-                    Self::update_variance_state(self, state, batch, *column, row_idx)?;
+                    Self::update_variance_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::Median { column } => {
-                    Self::update_median_state(self, state, batch, *column, row_idx)?;
+                    Self::update_median_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Percentile { column, .. } => {
-                    Self::update_percentile_state(self, state, batch, *column, row_idx)?;
+                AggregationFunction::Percentile { column, percentile } => {
+                    Self::update_percentile_state_direct(state, batch, *column, row_idx, *percentile)?;
                 },
                 AggregationFunction::DistinctCount { column } => {
-                    Self::update_distinct_count_state(self, state, batch, *column, row_idx)?;
+                    Self::update_distinct_count_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::CollectList { column } => {
-                    Self::update_collect_list_state(self, state, batch, *column, row_idx)?;
+                    Self::update_collect_list_state_direct(state, batch, *column, row_idx)?;
                 },
                 AggregationFunction::CollectSet { column } => {
-                    Self::update_collect_set_state(self, state, batch, *column, row_idx)?;
+                    Self::update_collect_set_state_direct(state, batch, *column, row_idx)?;
                 },
             }
         }
@@ -920,5 +920,234 @@ impl Operator for VectorizedAggregator {
     
     fn name(&self) -> &str {
         &self.name
+    }
+    
+    /// 直接更新求和状态（避免借用检查问题）
+    fn update_sum_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Sum { sum } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            *sum = Self::add_scalar_values_static(sum, &value)?;
+        }
+        Ok(())
+    }
+    
+    /// 直接更新平均值状态
+    fn update_avg_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Avg { sum, count } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            *sum = Self::add_scalar_values_static(sum, &value)?;
+            *count += 1;
+        }
+        Ok(())
+    }
+    
+    /// 直接更新最小值状态
+    fn update_min_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Min { min } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            if min.is_none() || Self::compare_scalar_values_static(&value, min.as_ref().unwrap())? == std::cmp::Ordering::Less {
+                *min = Some(value);
+            }
+        }
+        Ok(())
+    }
+    
+    /// 直接更新最大值状态
+    fn update_max_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Max { max } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            if max.is_none() || Self::compare_scalar_values_static(&value, max.as_ref().unwrap())? == std::cmp::Ordering::Greater {
+                *max = Some(value);
+            }
+        }
+        Ok(())
+    }
+    
+    /// 直接更新第一个值状态
+    fn update_first_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::First { first } = state {
+            if first.is_none() {
+                let column = batch.column(column);
+                let value = Self::extract_scalar_value_static(column, row_idx)?;
+                *first = Some(value);
+            }
+        }
+        Ok(())
+    }
+    
+    /// 直接更新最后一个值状态
+    fn update_last_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Last { last } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            *last = Some(value);
+        }
+        Ok(())
+    }
+    
+    /// 直接更新标准差状态
+    fn update_stddev_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::StdDev { sum, sum_squares, count } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            *sum = Self::add_scalar_values_static(sum, &value)?;
+            *sum_squares = Self::add_scalar_values_static(sum_squares, &Self::square_scalar_value_static(&value)?)?;
+            *count += 1;
+        }
+        Ok(())
+    }
+    
+    /// 直接更新方差状态
+    fn update_variance_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Variance { sum, sum_squares, count } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            *sum = Self::add_scalar_values_static(sum, &value)?;
+            *sum_squares = Self::add_scalar_values_static(sum_squares, &Self::square_scalar_value_static(&value)?)?;
+            *count += 1;
+        }
+        Ok(())
+    }
+    
+    /// 直接更新中位数状态
+    fn update_median_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::Median { values } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            values.push(value);
+        }
+        Ok(())
+    }
+    
+    /// 直接更新百分位数状态
+    fn update_percentile_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize, percentile: f64) -> Result<(), String> {
+        if let AggregationState::Percentile { values, .. } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            values.push(value);
+        }
+        Ok(())
+    }
+    
+    /// 直接更新去重计数状态
+    fn update_distinct_count_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::DistinctCount { distinct_values } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            distinct_values.insert(value);
+        }
+        Ok(())
+    }
+    
+    /// 直接更新收集列表状态
+    fn update_collect_list_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::CollectList { values } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            values.push(value);
+        }
+        Ok(())
+    }
+    
+    /// 直接更新收集集合状态
+    fn update_collect_set_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
+        if let AggregationState::CollectSet { values } = state {
+            let column = batch.column(column);
+            let value = Self::extract_scalar_value_static(column, row_idx)?;
+            values.insert(value);
+        }
+        Ok(())
+    }
+    
+    /// 静态版本的提取标量值函数
+    fn extract_scalar_value_static(column: &ArrayRef, row_idx: usize) -> Result<ScalarValue, String> {
+        match column.data_type() {
+            DataType::Int32 => {
+                let array = column.as_any().downcast_ref::<Int32Array>().unwrap();
+                if array.is_null(row_idx) {
+                    Ok(ScalarValue::Int32(None))
+                } else {
+                    Ok(ScalarValue::Int32(Some(array.value(row_idx))))
+                }
+            },
+            DataType::Int64 => {
+                let array = column.as_any().downcast_ref::<Int64Array>().unwrap();
+                if array.is_null(row_idx) {
+                    Ok(ScalarValue::Int64(None))
+                } else {
+                    Ok(ScalarValue::Int64(Some(array.value(row_idx))))
+                }
+            },
+            DataType::Float32 => {
+                let array = column.as_any().downcast_ref::<Float32Array>().unwrap();
+                if array.is_null(row_idx) {
+                    Ok(ScalarValue::Float32(None))
+                } else {
+                    Ok(ScalarValue::Float32(Some(array.value(row_idx))))
+                }
+            },
+            DataType::Float64 => {
+                let array = column.as_any().downcast_ref::<Float64Array>().unwrap();
+                if array.is_null(row_idx) {
+                    Ok(ScalarValue::Float64(None))
+                } else {
+                    Ok(ScalarValue::Float64(Some(array.value(row_idx))))
+                }
+            },
+            DataType::Utf8 => {
+                let array = column.as_any().downcast_ref::<StringArray>().unwrap();
+                if array.is_null(row_idx) {
+                    Ok(ScalarValue::Utf8(None))
+                } else {
+                    Ok(ScalarValue::Utf8(Some(array.value(row_idx).to_string())))
+                }
+            },
+            _ => Err(format!("Unsupported data type: {:?}", column.data_type())),
+        }
+    }
+    
+    /// 静态版本的添加标量值函数
+    fn add_scalar_values_static(left: &mut ScalarValue, right: &ScalarValue) -> Result<ScalarValue, String> {
+        match (left, right) {
+            (ScalarValue::Int32(Some(l)), ScalarValue::Int32(Some(r))) => {
+                Ok(ScalarValue::Int32(Some(l + r)))
+            },
+            (ScalarValue::Int64(Some(l)), ScalarValue::Int64(Some(r))) => {
+                Ok(ScalarValue::Int64(Some(l + r)))
+            },
+            (ScalarValue::Float32(Some(l)), ScalarValue::Float32(Some(r))) => {
+                Ok(ScalarValue::Float32(Some(l + r)))
+            },
+            (ScalarValue::Float64(Some(l)), ScalarValue::Float64(Some(r))) => {
+                Ok(ScalarValue::Float64(Some(l + r)))
+            },
+            _ => Err("Cannot add scalar values of different types".to_string()),
+        }
+    }
+    
+    /// 静态版本的平方标量值函数
+    fn square_scalar_value_static(value: &ScalarValue) -> Result<ScalarValue, String> {
+        match value {
+            ScalarValue::Int32(Some(v)) => Ok(ScalarValue::Int32(Some(v * v))),
+            ScalarValue::Int64(Some(v)) => Ok(ScalarValue::Int64(Some(v * v))),
+            ScalarValue::Float32(Some(v)) => Ok(ScalarValue::Float32(Some(v * v))),
+            ScalarValue::Float64(Some(v)) => Ok(ScalarValue::Float64(Some(v * v))),
+            _ => Err("Cannot square scalar value".to_string()),
+        }
+    }
+    
+    /// 静态版本的比较标量值函数
+    fn compare_scalar_values_static(left: &ScalarValue, right: &ScalarValue) -> Result<std::cmp::Ordering, String> {
+        match (left, right) {
+            (ScalarValue::Int32(Some(l)), ScalarValue::Int32(Some(r))) => Ok(l.cmp(r)),
+            (ScalarValue::Int64(Some(l)), ScalarValue::Int64(Some(r))) => Ok(l.cmp(r)),
+            (ScalarValue::Float32(Some(l)), ScalarValue::Float32(Some(r))) => Ok(l.partial_cmp(r).unwrap_or(std::cmp::Ordering::Equal)),
+            (ScalarValue::Float64(Some(l)), ScalarValue::Float64(Some(r))) => Ok(l.partial_cmp(r).unwrap_or(std::cmp::Ordering::Equal)),
+            _ => Err("Cannot compare scalar values of different types".to_string()),
+        }
     }
 }

@@ -37,6 +37,16 @@ use crate::execution::operators::vectorized_filter::FilterPredicate;
 use crate::execution::operators::vectorized_projector::ProjectionExpression;
 use crate::execution::operators::vectorized_aggregator::AggregationFunction;
 
+/// 聚合类型
+#[derive(Debug, Clone, PartialEq)]
+pub enum AggregationType {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
 /// JIT表达式编译器
 pub struct ExpressionJIT {
     /// Cranelift JIT模块
@@ -107,7 +117,7 @@ impl ExpressionJIT {
             FusedOperatorType::ProjectAggregate { projection_expressions, aggregation_functions } => {
                 self.compile_project_aggregate(projection_expressions, aggregation_functions)?
             },
-            FusedOperatorType::FilterProjectAggregate { filter_predicate, projection_expressions, aggregation_functions } => {
+            FusedOperatorType::FilterProjectAggregate { filter_predicate, projection_expressions, ref aggregation_functions } => {
                 self.compile_filter_project_aggregate(filter_predicate, projection_expressions, aggregation_functions)?
             },
         };
