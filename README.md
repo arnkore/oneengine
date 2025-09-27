@@ -12,6 +12,13 @@ OneEngine is a high-performance, unified native execution engine designed to ser
 - **Execution Context**: Comprehensive execution context with metrics and memory management
 - **Operator Interface**: Vectorized operator interface with prepare/poll_next/close pattern
 
+### Phase 1 - Core Operators (🚧 In Progress)
+- **Hash Aggregation**: Two-phase hash aggregation with COUNT/SUM/AVG/MAX/MIN support
+- **Top-N Operator**: Partial sorting and merge operations
+- **Hash Join**: Broadcast/Shuffle join modes
+- **Runtime Filter**: Bloom/IN/MinMax filter support
+- **Local Shuffle**: Single-machine multi-partition redistribution
+
 ### Core Features
 - **Push-based Pipeline Scheduler**: High-performance push-mode scheduling for optimal task execution
 - **Multi-Engine Support**: Unified interface for Spark, Flink, Trino, and Presto
@@ -20,11 +27,20 @@ OneEngine is a high-performance, unified native execution engine designed to ser
 - **Async/Await**: Full async support for concurrent task execution
 
 ### Performance Benchmarks
+
+#### Phase 0 - Columnar Foundation
 - **Batch Creation (10k rows)**: ~686μs
 - **Batch Slicing (1k rows)**: ~56μs  
 - **Memory Usage Calculation**: ~1.9ns
 - **Null Bitmap Operations**: ~2.5μs (1k operations)
 - **Batch Statistics**: ~3.8μs
+
+#### Phase 1 - Hash Aggregation
+- **Hash Agg Processing (1k rows)**: ~139μs
+- **Hash Agg Processing (10k rows)**: ~1.37ms
+- **Hash Agg Processing (100k rows)**: ~14.6ms
+- **Different Group Sizes**: 205μs (1 col) → 273μs (3 cols)
+- **Aggregation Functions**: ~124μs (COUNT/SUM/AVG/MAX/MIN)
 
 ## Architecture
 

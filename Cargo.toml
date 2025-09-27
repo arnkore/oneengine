@@ -51,6 +51,7 @@ hashbrown = "0.14"
 num_cpus = "1.16"
 serde_yaml = "0.9"
 smallvec = "1.11"
+rand = "0.8"
 
 [dev-dependencies]
 criterion = "0.5"
@@ -62,6 +63,10 @@ harness = false
 
 [[bench]]
 name = "columnar_bench"
+harness = false
+
+[[bench]]
+name = "hash_agg_bench"
 harness = false
 
 [profile.release]
