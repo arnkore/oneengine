@@ -93,7 +93,7 @@ impl DictionarySimdFilter {
     /// 创建新的字典SIMD过滤器
     pub fn new() -> Self {
         let simd_capabilities = SimdCapabilities::detect();
-        let string_comparator = SimdStringComparator::new(SimdConfig::default());
+        let string_comparator = SimdStringComparator::new(SimdCapabilities::detect());
         
         Self {
             simd_capabilities,
