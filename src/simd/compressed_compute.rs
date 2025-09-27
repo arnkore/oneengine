@@ -189,7 +189,7 @@ impl RLESegmentAggregator {
     /// 创建新的RLE段聚合器
     pub fn new() -> Self {
         let simd_capabilities = SimdCapabilities::detect();
-        let arithmetic = SimdArithmetic::new(SimdConfig::default());
+        let arithmetic = SimdArithmetic::new(SimdCapabilities::detect());
         
         Self {
             arithmetic,
@@ -320,7 +320,7 @@ impl RLESegmentAggregator {
     
     /// 分析字符串RLE段
     fn analyze_string_rle_segments(&mut self, array: &StringArray) -> Result<(), String> {
-        let mut current_value = None;
+        let mut current_value: Option<String> = None;
         let mut current_start = 0;
         let mut current_length = 0;
         
@@ -411,10 +411,10 @@ impl RLESegmentAggregator {
         for segment in &self.rle_segments {
             match &segment.value {
                 ScalarValue::Int32(Some(v)) => {
-                    min_value = Some(min_value.map_or(*v, |m| m.min(*v)));
+                    min_value = Some(min_value.map_or(*v, |m: i32| m.min(*v)));
                 },
                 ScalarValue::Int64(Some(v)) => {
-                    min_value = Some(min_value.map_or(*v, |m| m.min(*v)));
+                    min_value = Some(min_value.map_or(*v, |m: i64| m.min(*v)));
                 },
                 _ => return Err("Unsupported data type for min aggregation".to_string()),
             }
@@ -430,10 +430,10 @@ impl RLESegmentAggregator {
         for segment in &self.rle_segments {
             match &segment.value {
                 ScalarValue::Int32(Some(v)) => {
-                    max_value = Some(max_value.map_or(*v, |m| m.max(*v)));
+                    max_value = Some(max_value.map_or(*v, |m: i32| m.max(*v)));
                 },
                 ScalarValue::Int64(Some(v)) => {
-                    max_value = Some(max_value.map_or(*v, |m| m.max(*v)));
+                    max_value = Some(max_value.map_or(*v, |m: i64| m.max(*v)));
                 },
                 _ => return Err("Unsupported data type for max aggregation".to_string()),
             }

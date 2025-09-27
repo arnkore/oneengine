@@ -92,7 +92,7 @@ pub struct Connection {
 pub type ConnectionId = u64;
 
 /// 消息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Message {
     /// 消息类型
     message_type: MessageType,

@@ -740,7 +740,7 @@ impl DataLakeReader {
                 if let Some(column_index) = batch.schema().column_with_name(column) {
                     let array = batch.column(column_index.0);
                     for (i, is_null) in array.nulls().iter().enumerate() {
-                        if is_null.unwrap_or(&false) {
+                        if is_null.unwrap_or(false) {
                             valid_rows.push(i);
                         }
                     }
