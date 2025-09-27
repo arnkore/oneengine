@@ -334,8 +334,6 @@ src/
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Roadmap
 
 - [ ] Complete protocol implementations for all engines
@@ -345,3 +343,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [ ] Web UI for monitoring
 - [ ] Performance benchmarks
 - [ ] Documentation and tutorials
+
+## 📄 License
+
+This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+## 📞 Contact
+
+- Author: liuzonghao <ludo.arnk@gmail.com>
+- Project: [OneEngine](https://github.com/your-username/oneengine)
