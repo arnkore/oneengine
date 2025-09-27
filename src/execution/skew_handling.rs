@@ -115,7 +115,7 @@ pub struct HeavyTailChannel {
 }
 
 /// 通道状态
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ChannelStatus {
     /// 空闲
     Idle,
@@ -191,7 +191,8 @@ impl SkewDetector {
             DataType::Int32 => {
                 let int_array = array.as_any().downcast_ref::<Int32Array>().unwrap();
                 for i in 0..int_array.len() {
-                    if let Some(val) = int_array.value_opt(i) {
+                    if !int_array.is_null(i) {
+                        let val = int_array.value(i);
                         values.push(ScalarValue::Int32(Some(val)));
                     }
                 }
@@ -199,7 +200,8 @@ impl SkewDetector {
             DataType::Int64 => {
                 let int_array = array.as_any().downcast_ref::<Int64Array>().unwrap();
                 for i in 0..int_array.len() {
-                    if let Some(val) = int_array.value_opt(i) {
+                    if !int_array.is_null(i) {
+                        let val = int_array.value(i);
                         values.push(ScalarValue::Int64(Some(val)));
                     }
                 }
@@ -207,7 +209,8 @@ impl SkewDetector {
             DataType::Utf8 => {
                 let string_array = array.as_any().downcast_ref::<StringArray>().unwrap();
                 for i in 0..string_array.len() {
-                    if let Some(val) = string_array.value_opt(i) {
+                    if !string_array.is_null(i) {
+                        let val = string_array.value(i);
                         values.push(ScalarValue::Utf8(Some(val.to_string())));
                     }
                 }
@@ -215,7 +218,8 @@ impl SkewDetector {
             DataType::Float32 => {
                 let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
                 for i in 0..float_array.len() {
-                    if let Some(val) = float_array.value_opt(i) {
+                    if !float_array.is_null(i) {
+                        let val = float_array.value(i);
                         values.push(ScalarValue::Float32(Some(val)));
                     }
                 }
@@ -223,7 +227,8 @@ impl SkewDetector {
             DataType::Float64 => {
                 let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
                 for i in 0..float_array.len() {
-                    if let Some(val) = float_array.value_opt(i) {
+                    if !float_array.is_null(i) {
+                        let val = float_array.value(i);
                         values.push(ScalarValue::Float64(Some(val)));
                     }
                 }

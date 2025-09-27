@@ -86,6 +86,14 @@ pub struct PerformanceSnapshot {
     avg_processing_time: Duration,
     /// 吞吐量（行/秒）
     throughput: f64,
+    /// 算子堵塞时间
+    operator_blocking_time: Duration,
+    /// 内存使用
+    memory_usage: usize,
+    /// CPU使用率
+    cpu_usage: f64,
+    /// 内存压力
+    memory_pressure: f64,
 }
 
 /// 批量调整建议

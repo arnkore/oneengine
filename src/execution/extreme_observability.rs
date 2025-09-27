@@ -56,6 +56,18 @@ pub struct PerformanceMetricsCollector {
     operator_performance: Arc<Mutex<HashMap<OperatorId, OperatorStats>>>,
     /// 查询执行统计
     query_execution_stats: Arc<Mutex<HashMap<String, QueryExecutionStats>>>,
+    /// 总操作数
+    total_operations: Arc<AtomicU64>,
+    /// 总执行时间
+    total_execution_time: Arc<AtomicU64>,
+    /// 缓存大小
+    cache_size: Arc<AtomicU64>,
+    /// 溢出大小
+    spill_size: Arc<AtomicU64>,
+    /// 总处理行数
+    total_rows_processed: Arc<AtomicU64>,
+    /// 总错误数
+    total_errors: Arc<AtomicU64>,
 }
 
 /// Build/Probe选择统计
@@ -471,6 +483,12 @@ impl PerformanceMetricsCollector {
             batch_histogram: Arc::new(Mutex::new(BatchHistogram::new())),
             operator_performance: Arc::new(Mutex::new(HashMap::new())),
             query_execution_stats: Arc::new(Mutex::new(HashMap::new())),
+            total_operations: Arc::new(AtomicU64::new(0)),
+            total_execution_time: Arc::new(AtomicU64::new(0)),
+            cache_size: Arc::new(AtomicU64::new(0)),
+            spill_size: Arc::new(AtomicU64::new(0)),
+            total_rows_processed: Arc::new(AtomicU64::new(0)),
+            total_errors: Arc::new(AtomicU64::new(0)),
         }
     }
 }
