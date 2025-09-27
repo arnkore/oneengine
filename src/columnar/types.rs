@@ -69,6 +69,29 @@ impl DataType {
     pub fn is_temporal(&self) -> bool {
         matches!(self, DataType::Date32 | DataType::Date64 | DataType::Timestamp)
     }
+
+    /// Convert to u8 representation
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            DataType::Boolean => 0,
+            DataType::Int8 => 1,
+            DataType::Int16 => 2,
+            DataType::Int32 => 3,
+            DataType::Int64 => 4,
+            DataType::UInt8 => 5,
+            DataType::UInt16 => 6,
+            DataType::UInt32 => 7,
+            DataType::UInt64 => 8,
+            DataType::Float32 => 9,
+            DataType::Float64 => 10,
+            DataType::Utf8 => 11,
+            DataType::Binary => 12,
+            DataType::Date32 => 13,
+            DataType::Date64 => 14,
+            DataType::Timestamp => 15,
+            DataType::Decimal(_, _) => 16,
+        }
+    }
 }
 
 impl fmt::Display for DataType {

@@ -33,6 +33,9 @@ futures = "0.3"
 # Memory management
 bytes = "1.5"
 mimalloc = { version = "0.1", default-features = false }
+lz4_flex = "0.11"
+zstd = "0.13"
+flate2 = "1.0"
 
 # Logging and monitoring
 tracing = "0.1"
@@ -75,6 +78,10 @@ harness = false
 
 [[bench]]
 name = "local_shuffle_bench"
+harness = false
+
+[[bench]]
+name = "memory_management_bench"
 harness = false
 
 [profile.release]
