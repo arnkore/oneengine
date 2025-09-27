@@ -76,6 +76,8 @@ pub enum OpStatus {
     Blocked,
     /// 完成
     Finished,
+    /// 有更多数据
+    HasMore,
     /// 错误
     Error(String),
 }

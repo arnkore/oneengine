@@ -22,7 +22,7 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::ptr::{NonNull, null_mut};
 use std::mem;
 
@@ -97,9 +97,9 @@ pub struct SmallObjectPool {
     /// 池大小
     pool_size: usize,
     /// 内存块
-    memory_blocks: Vec<MemoryBlock>,
+    memory_blocks: Arc<Mutex<Vec<MemoryBlock>>>,
     /// 空闲对象列表
-    free_objects: Vec<*mut u8>,
+    free_objects: Arc<Mutex<Vec<*mut u8>>>,
     /// 对齐要求
     alignment: usize,
 }
@@ -109,9 +109,9 @@ pub struct MediumObjectPool {
     /// 对象大小范围
     size_range: (usize, usize),
     /// 内存块
-    memory_blocks: Vec<MemoryBlock>,
+    memory_blocks: Arc<Mutex<Vec<MemoryBlock>>>,
     /// 空闲对象列表
-    free_objects: Vec<*mut u8>,
+    free_objects: Arc<Mutex<Vec<*mut u8>>>,
     /// 对齐要求
     alignment: usize,
 }
@@ -119,7 +119,7 @@ pub struct MediumObjectPool {
 /// 大对象池
 pub struct LargeObjectPool {
     /// 内存块
-    memory_blocks: Vec<MemoryBlock>,
+    memory_blocks: Arc<Mutex<Vec<MemoryBlock>>>,
     /// 对齐要求
     alignment: usize,
 }
@@ -253,6 +253,35 @@ impl HighPerformanceAllocator {
         }
     }
     
+    /// 系统分配器分配实现
+    fn system_alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe {
+            std::alloc::alloc(layout)
+        };
+        
+        if ptr.is_null() {
+            return null_mut();
+        }
+        
+        // 对齐检查
+        let aligned_ptr = self.align_ptr(ptr, layout.align());
+        if aligned_ptr != ptr {
+            // 如果指针需要对齐，重新分配
+            unsafe {
+                std::alloc::dealloc(ptr, layout);
+            }
+            return self.system_alloc(layout);
+        }
+
+        ptr
+    }
+    
+    /// 对齐指针
+    fn align_ptr(&self, ptr: *mut u8, alignment: usize) -> *mut u8 {
+        let addr = ptr as usize;
+        let aligned_addr = (addr + alignment - 1) & !(alignment - 1);
+        aligned_addr as *mut u8
+    }
     
     /// jemalloc释放实现
     fn jemalloc_dealloc(&self, ptr: *mut u8, _layout: Layout) {
@@ -504,8 +533,8 @@ impl SmallObjectPool {
         Self {
             object_size,
             pool_size,
-            memory_blocks,
-            free_objects,
+            memory_blocks: Arc::new(Mutex::new(memory_blocks)),
+            free_objects: Arc::new(Mutex::new(free_objects)),
             alignment,
         }
     }
@@ -549,8 +578,8 @@ impl MediumObjectPool {
 
         Self {
             size_range,
-            memory_blocks,
-            free_objects,
+            memory_blocks: Arc::new(Mutex::new(memory_blocks)),
+            free_objects: Arc::new(Mutex::new(free_objects)),
             alignment,
         }
     }
@@ -560,23 +589,21 @@ impl MediumObjectPool {
         // 线程安全的分配实现
         let mut free_objects = self.free_objects.lock().unwrap();
         
-        // 查找合适大小的对象
-        for i in 0..free_objects.len() {
-            if free_objects[i].size >= size {
-                let obj = free_objects.remove(i);
-                return Some(obj.ptr);
-            }
+        // 检查大小是否在范围内
+        if size < self.size_range.0 || size > self.size_range.1 {
+            return None;
         }
         
-        None
+        // 返回第一个可用的对象
+        free_objects.pop()
     }
 
     /// 释放对象
-    pub fn deallocate(&self, ptr: *mut u8, size: usize) {
+    pub fn deallocate(&self, ptr: *mut u8, _size: usize) {
         // 线程安全的释放实现
         if !ptr.is_null() {
             let mut free_objects = self.free_objects.lock().unwrap();
-            free_objects.push((ptr, size));
+            free_objects.push(ptr);
         }
     }
 }
@@ -597,7 +624,7 @@ impl LargeObjectPool {
         });
 
         Self {
-            memory_blocks,
+            memory_blocks: Arc::new(Mutex::new(memory_blocks)),
             alignment,
         }
     }

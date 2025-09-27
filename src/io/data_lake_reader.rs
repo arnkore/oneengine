@@ -758,8 +758,15 @@ impl DataLakeReader {
             Predicate::IsNotNull { column } => {
                 if let Some(column_index) = batch.schema().column_with_name(column) {
                     let array = batch.column(column_index.0);
-                    for (i, is_null) in array.nulls().iter().enumerate() {
-                        if !is_null {
+                    if let Some(nulls) = array.nulls() {
+                        for (i, is_null) in nulls.iter().enumerate() {
+                            if !is_null {
+                                valid_rows.push(i);
+                            }
+                        }
+                    } else {
+                        // 如果没有null buffer，所有行都有效
+                        for i in 0..array.len() {
                             valid_rows.push(i);
                         }
                     }

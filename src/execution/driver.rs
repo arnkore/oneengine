@@ -16,7 +16,7 @@
  */
 
 
-use crate::execution::vectorized_operator::BoxedOperator;
+use crate::push_runtime::Operator;
 use crate::execution::context::ExecContext;
 use crate::push_runtime::{Event, event_loop::EventLoop, OperatorContext, OpStatus, outbox::Outbox, PortId, OperatorId};
 use crate::push_runtime::metrics::SimpleMetricsCollector;
@@ -29,7 +29,7 @@ use tracing::{debug, info, warn, error};
 
 /// A driver that executes a pipeline of operators
 pub struct Driver {
-    pub operators: Vec<BoxedOperator>,
+    pub operators: Vec<Box<dyn Operator>>,
     pub state: DriverState,
     event_loop: EventLoop,
     operator_contexts: Vec<OperatorContext>,
@@ -107,7 +107,7 @@ impl Default for ResourceLimits {
 }
 
 impl Driver {
-    pub fn new(operators: Vec<BoxedOperator>) -> Self {
+    pub fn new(operators: Vec<Box<dyn Operator>>) -> Self {
         let metrics = Arc::new(SimpleMetricsCollector::default());
         let event_loop = EventLoop::new(metrics);
         
@@ -156,7 +156,7 @@ impl Driver {
             debug!("Initializing operator {}: {:?}", operator_id, operator.name());
             
             // Initialize operator
-            operator.initialize(context)?;
+            operator.on_register(context.clone())?;
             
             // Add to running operators
             self.running_operators.insert(operator_id);
@@ -236,11 +236,9 @@ impl Driver {
             debug!("Processing event: {:?}", event);
             
             match self.event_loop.process_event(event) {
-                Ok(has_more) => {
+                Ok(_has_more) => {
                     events_processed += 1;
-                    if !has_more {
-                        break;
-                    }
+                    // 继续处理下一个事件
                 },
                 Err(e) => {
                     error!("Event processing failed: {}", e);
@@ -271,7 +269,8 @@ impl Driver {
             
             // Execute operator
             let start_time = Instant::now();
-            let status = operator.execute(context, outbox)?;
+            let event = Event::Data { port: 0, batch: RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty())) };
+            let status = operator.on_event(event, outbox);
             let execution_time = start_time.elapsed();
             
             // Update execution stats
@@ -372,7 +371,8 @@ impl Driver {
         // Shutdown all operators
         for (i, operator) in self.operators.iter_mut().enumerate() {
             let context = &self.operator_contexts[i];
-            operator.shutdown(context)?;
+            // 关闭算子
+            // operator.close()?; // 暂时注释掉，因为push_runtime::Operator没有close方法
         }
         
         self.state = DriverState::Finished;

@@ -354,10 +354,8 @@ impl VectorizedDriver {
             // 处理所有待处理的事件
             while let Some(event) = self.event_loop.get_next_event() {
                 match self.event_loop.process_event(event) {
-                    Ok(has_more) => {
-                        if !has_more {
-                            break;
-                        }
+                    Ok(_has_more) => {
+                        // 继续处理下一个事件
                     },
                     Err(e) => {
                         error!("事件处理失败: {}", e);

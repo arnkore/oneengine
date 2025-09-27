@@ -462,7 +462,7 @@ impl NodeLoadBalancer {
 struct NoOpOperator;
 
 impl Operator for NoOpOperator {
-    fn on_register(&mut self, _ctx: crate::push_runtime::OperatorContext) -> Result<(), String> {
+    fn on_register(&mut self, _ctx: crate::push_runtime::OperatorContext) -> Result<(), anyhow::Error> {
         Ok(())
     }
     
