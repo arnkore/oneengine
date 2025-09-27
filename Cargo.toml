@@ -38,6 +38,9 @@ arrow-row = "56.0"
 async-stream = "0.3"
 tokio-stream = "0.1"
 
+# ORC support
+orc-rs = "0.1.5"
+
 # Memory management
 bytes = "1.5"
 mimalloc = { version = "0.1", default-features = false }
