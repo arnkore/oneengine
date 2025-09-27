@@ -3,9 +3,7 @@
 //! 充分利用Arrow的计算内核和数据结构
 
 pub mod spill_manager;
-pub mod adaptive_batch;
 pub mod join_adaptation;
-pub mod skew_handling;
 pub mod vectorized_filter;
 pub mod vectorized_projector;
 pub mod vectorized_aggregator;

@@ -3,7 +3,7 @@ use crate::core::pipeline::Pipeline;
 use crate::scheduler::task_queue::TaskQueue;
 use crate::scheduler::pipeline_manager::PipelineManager;
 use crate::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
-use crate::execution::executor::vectorized_driver::VectorizedDriver;
+use crate::execution::vectorized_driver::VectorizedDriver;
 use crate::io::vectorized_scan_operator::VectorizedScanConfig;
 use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
 use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
@@ -224,8 +224,8 @@ impl PushScheduler {
     }
     
     /// Convert pipeline to query plan
-    async fn convert_pipeline_to_query_plan(&self, pipeline: Pipeline) -> Result<crate::execution::executor::vectorized_driver::QueryPlan> {
-        use crate::execution::executor::vectorized_driver::*;
+    async fn convert_pipeline_to_query_plan(&self, pipeline: Pipeline) -> Result<crate::execution::vectorized_driver::QueryPlan> {
+        use crate::execution::vectorized_driver::*;
         use arrow::datatypes::*;
         use datafusion_common::ScalarValue;
         
@@ -338,7 +338,7 @@ impl PushScheduler {
     }
     
     /// Convert task to query plan
-    async fn convert_task_to_query_plan(&self, task: Task) -> Result<crate::execution::executor::vectorized_driver::QueryPlan> {
+    async fn convert_task_to_query_plan(&self, task: Task) -> Result<crate::execution::vectorized_driver::QueryPlan> {
         // Create a simple pipeline with one task
         let pipeline = Pipeline {
             id: Uuid::new_v4(),

@@ -10,3 +10,6 @@ pub mod adaptive_batching;
 pub mod skew_handling;
 pub mod extreme_observability;
 pub mod executor;
+pub mod worker;
+pub mod vectorized_driver;
+pub mod executor_operator;
