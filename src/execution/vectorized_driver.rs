@@ -344,7 +344,8 @@ impl VectorizedDriver {
         for input_operator in input_operators {
             if let OperatorType::Scan { file_path } = &input_operator.operator_type {
                 let start_scan_event = Event::StartScan { file_path: file_path.clone() };
-                self.event_loop.process_event(start_scan_event)?;
+                self.event_loop.process_event(start_scan_event)
+                    .map_err(|e| anyhow::anyhow!("Event processing failed: {}", e))?;
             }
         }
         
@@ -368,7 +369,7 @@ impl VectorizedDriver {
             // 检查是否有算子需要处理
             let mut has_work = false;
             for worker in &self.workers {
-                if worker.has_pending_tasks() {
+                if worker.has_pending_tasks().await {
                     has_work = true;
                     break;
                 }
@@ -381,7 +382,7 @@ impl VectorizedDriver {
             
             // 收集结果
             for worker in &self.workers {
-                if let Some(batch) = worker.get_result() {
+                if let Some(batch) = worker.get_result().await {
                     results.push(batch);
                 }
             }

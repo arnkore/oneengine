@@ -414,15 +414,19 @@ impl RaceTester {
 
         // 创建测试线程
         let test_func = Arc::new(test_func);
-        for _ in 0..self.config.thread_count {
+        let results = self.results.clone();
+        let thread_count = self.config.thread_count;
+        let operation_count = self.config.operation_count;
+        
+        for _ in 0..thread_count {
             let test_func = test_func.clone();
-            let results = self.results.clone();
+            let results = results.clone();
             
             let handle = thread::spawn(move || {
                 let mut local_operations = 0;
                 let mut local_errors = 0;
                 
-                for _ in 0..self.config.operation_count {
+                for _ in 0..operation_count {
                     match test_func() {
                         Ok(_) => local_operations += 1,
                         Err(_) => local_errors += 1,

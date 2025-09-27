@@ -214,8 +214,8 @@ impl PushScheduler {
     
     /// Execute a pipeline using vectorized execution
     pub async fn execute_pipeline_vectorized(&self, pipeline: Pipeline) -> Result<Vec<arrow::record_batch::RecordBatch>> {
-        let driver = self.vectorized_driver.read().await;
-        if let Some(ref driver) = *driver {
+        let mut driver = self.vectorized_driver.write().await;
+        if let Some(ref mut driver) = *driver {
             // Convert pipeline to query plan and execute
             let query_plan = self.convert_pipeline_to_query_plan(pipeline).await?;
             let results = driver.execute_query(query_plan).await
@@ -228,8 +228,8 @@ impl PushScheduler {
     
     /// Execute a task using vectorized execution
     pub async fn execute_task_vectorized(&self, task: Task) -> Result<arrow::record_batch::RecordBatch> {
-        let driver = self.vectorized_driver.read().await;
-        if let Some(ref driver) = *driver {
+        let mut driver = self.vectorized_driver.write().await;
+        if let Some(ref mut driver) = *driver {
             // Convert task to query plan and execute
             let query_plan = self.convert_task_to_query_plan(task).await?;
             let results = driver.execute_query(query_plan).await

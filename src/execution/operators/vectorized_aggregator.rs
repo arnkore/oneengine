@@ -369,48 +369,48 @@ impl VectorizedAggregator {
             let state = &mut self.agg_states[group_id][func_idx];
             
             match func {
-                AggregationFunction::Count => {
+                AggregationFunction::Count { output_column: _ } => {
                     if let AggregationState::Count { count } = state {
                         *count += 1;
                     }
                 },
-                AggregationFunction::Sum { column } => {
+                AggregationFunction::Sum { column, output_column: _ } => {
                     Self::update_sum_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Avg { column } => {
+                AggregationFunction::Avg { column, output_column: _ } => {
                     Self::update_avg_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Min { column } => {
+                AggregationFunction::Min { column, output_column: _ } => {
                     Self::update_min_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Max { column } => {
+                AggregationFunction::Max { column, output_column: _ } => {
                     Self::update_max_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::First { column } => {
+                AggregationFunction::First { column, output_column: _ } => {
                     Self::update_first_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Last { column } => {
+                AggregationFunction::Last { column, output_column: _ } => {
                     Self::update_last_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::StdDev { column } => {
+                AggregationFunction::StdDev { column, output_column: _ } => {
                     Self::update_stddev_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Variance { column } => {
+                AggregationFunction::Variance { column, output_column: _ } => {
                     Self::update_variance_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Median { column } => {
+                AggregationFunction::Median { column, output_column: _ } => {
                     Self::update_median_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::Percentile { column, percentile } => {
+                AggregationFunction::Percentile { column, percentile, output_column: _ } => {
                     Self::update_percentile_state_direct(state, batch, *column, row_idx, *percentile)?;
                 },
-                AggregationFunction::DistinctCount { column } => {
+                AggregationFunction::DistinctCount { column, output_column: _ } => {
                     Self::update_distinct_count_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::CollectList { column } => {
+                AggregationFunction::CollectList { column, output_column: _ } => {
                     Self::update_collect_list_state_direct(state, batch, *column, row_idx)?;
                 },
-                AggregationFunction::CollectSet { column } => {
+                AggregationFunction::CollectSet { column, output_column: _ } => {
                     Self::update_collect_set_state_direct(state, batch, *column, row_idx)?;
                 },
             }
@@ -445,7 +445,10 @@ impl VectorizedAggregator {
         if let AggregationState::Min { min } = state {
             let column = batch.column(column);
             let value = self.extract_scalar_value(column, row_idx)?;
-            *min = self.min_scalar_values(min, &value)?;
+            *min = Some(match min {
+                Some(ref current_min) => self.min_scalar_values(current_min, &value)?,
+                None => value,
+            });
         }
         Ok(())
     }
@@ -455,7 +458,10 @@ impl VectorizedAggregator {
         if let AggregationState::Max { max } = state {
             let column = batch.column(column);
             let value = self.extract_scalar_value(column, row_idx)?;
-            *max = self.max_scalar_values(max, &value)?;
+            *max = Some(match max {
+                Some(ref current_max) => self.max_scalar_values(current_max, &value)?,
+                None => value,
+            });
         }
         Ok(())
     }
@@ -463,9 +469,9 @@ impl VectorizedAggregator {
     /// 更新第一个值状态
     fn update_first_state(&mut self, state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
         if let AggregationState::First { first } = state {
-            if first.is_null() {
+            if first.is_none() {
                 let column = batch.column(column);
-                *first = self.extract_scalar_value(column, row_idx)?;
+                *first = Some(self.extract_scalar_value(column, row_idx)?);
             }
         }
         Ok(())
@@ -475,7 +481,7 @@ impl VectorizedAggregator {
     fn update_last_state(&mut self, state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
         if let AggregationState::Last { last } = state {
             let column = batch.column(column);
-            *last = self.extract_scalar_value(column, row_idx)?;
+            *last = Some(self.extract_scalar_value(column, row_idx)?);
         }
         Ok(())
     }

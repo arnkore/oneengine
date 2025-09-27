@@ -77,7 +77,7 @@ pub struct Connection {
     /// 连接ID
     id: ConnectionId,
     /// TCP流
-    stream: TcpStream,
+    stream: Arc<tokio::sync::Mutex<TcpStream>>,
     /// 发送通道
     sender: mpsc::UnboundedSender<Message>,
     /// 接收通道
@@ -92,7 +92,7 @@ pub struct Connection {
 pub type ConnectionId = u64;
 
 /// 消息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Message {
     /// 消息类型
     message_type: MessageType,
@@ -105,7 +105,7 @@ pub struct Message {
 }
 
 /// 消息类型
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MessageType {
     /// 数据消息
     Data,
@@ -132,7 +132,7 @@ pub trait MessageTypeHandler {
 }
 
 /// 网络统计信息
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NetworkStats {
     /// 总连接数
     total_connections: AtomicU64,
@@ -149,7 +149,7 @@ pub struct NetworkStats {
 }
 
 /// 连接统计信息
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ConnectionStats {
     /// 连接ID
     connection_id: ConnectionId,
@@ -273,7 +273,8 @@ impl NetworkServer {
         
         loop {
             // 读取数据
-            let n = connection.stream.read(&mut buffer).await
+            let mut stream = connection.stream.lock().await;
+            let n = stream.read(&mut buffer).await
                 .map_err(|e| format!("Failed to read from connection: {}", e))?;
             
             if n == 0 {
@@ -329,7 +330,7 @@ impl ConnectionManager {
         // 创建连接
         let connection = Arc::new(Connection {
             id: connection_id,
-            stream,
+            stream: Arc::new(tokio::sync::Mutex::new(stream)),
             sender,
             receiver,
             stats: Arc::new(ConnectionStats::new(connection_id)),
@@ -370,7 +371,8 @@ impl Connection {
         let serialized = encoder.encode_message(message)?;
         
         // 发送数据
-        self.stream.write_all(&serialized).await
+        let mut stream = self.stream.lock().await;
+        stream.write_all(&serialized).await
             .map_err(|e| format!("Failed to send message: {}", e))?;
         
         Ok(())
@@ -590,16 +592,16 @@ impl Compressor {
     pub fn compress(&self, data: &[u8]) -> Result<Vec<u8>, String> {
         match self.algorithm {
             CompressionAlgorithm::Zstd => {
-                zstd::encode_all(data, self.level)
+                zstd::encode_all(data, self.level as i32)
                     .map_err(|e| format!("ZSTD compression failed: {}", e))
             },
             CompressionAlgorithm::Lz4 => {
-                lz4_flex::compress(data)
-                    .map_err(|e| format!("LZ4 compression failed: {}", e))
+                Ok(lz4_flex::compress(data))
             },
             CompressionAlgorithm::Gzip => {
                 use flate2::write::GzEncoder;
                 use flate2::Compression;
+                use std::io::Write;
                 
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::new(self.level as u32));
                 encoder.write_all(data)

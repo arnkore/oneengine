@@ -828,12 +828,12 @@ impl Operator for VectorizedProjector {
                         },
                         Err(e) => {
                             warn!("向量化投影失败: {}", e);
-                            OpStatus::Error
+                            OpStatus::Error("向量化投影失败".to_string())
                         }
                     }
                 } else {
                     warn!("未知的输入端口: {}", port);
-                    OpStatus::Error
+                    OpStatus::Error("未知的输入端口".to_string())
                 }
             },
             Event::EndOfStream { port } => {
@@ -877,7 +877,15 @@ impl BatchProjectorProcessor {
 
     /// 添加投影器
     pub fn add_projector(&mut self, expressions: Vec<ProjectionExpression>, output_schema: SchemaRef) {
-        let projector = VectorizedProjector::new(self.config.clone(), expressions, output_schema);
+        let projector = VectorizedProjector::new(
+            self.config.clone(), 
+            expressions, 
+            output_schema, 
+            0, // operator_id
+            vec![], // input_ports
+            vec![], // output_ports
+            "projector".to_string() // name
+        );
         self.projectors.push(projector);
     }
 
@@ -907,6 +915,43 @@ pub struct ProjectorOptimizer {
 impl ProjectorOptimizer {
     pub fn new(config: VectorizedProjectorConfig) -> Self {
         Self { config }
+    }
+    
+    /// 静态版本的表达式求值函数
+    fn evaluate_expression_static(
+        expr: &ProjectionExpression,
+        batch: &RecordBatch,
+    ) -> Result<ArrayRef, String> {
+        match expr {
+            ProjectionExpression::Column { index, .. } => {
+                if *index < batch.num_columns() {
+                    Ok(batch.column(*index).clone())
+                } else {
+                    Err("Column index out of bounds".to_string())
+                }
+            },
+            ProjectionExpression::Literal { value } => {
+                Self::create_literal_array_static(value, batch.num_rows())
+            },
+            ProjectionExpression::Arithmetic { left, op, right } => {
+                Self::evaluate_arithmetic_expression_static(left, op, right, batch)
+            },
+            ProjectionExpression::Comparison { left, op, right } => {
+                Self::evaluate_comparison_expression_static(left, op, right, batch)
+            },
+            ProjectionExpression::Logical { left, op, right } => {
+                Self::evaluate_logical_expression_static(left, op, right, batch)
+            },
+            ProjectionExpression::Function { name, args } => {
+                Self::evaluate_function_expression_static(name, args, batch)
+            },
+            ProjectionExpression::Case { condition, then_expr, else_expr } => {
+                Self::evaluate_case_expression_static(condition, then_expr, else_expr, batch)
+            },
+            ProjectionExpression::Cast { expr, data_type } => {
+                Self::evaluate_cast_expression_static(expr, data_type, batch)
+            },
+        }
     }
 
     /// 优化投影表达式
@@ -1002,7 +1047,7 @@ impl ProjectorOptimizer {
                 // 简化的除法实现
                 Ok(left_array.clone())
             },
-            ArithmeticOp::Modulus => {
+            ArithmeticOp::Modulo => {
                 // 简化的取模实现
                 Ok(left_array.clone())
             },

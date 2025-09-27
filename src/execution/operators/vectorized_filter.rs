@@ -261,19 +261,19 @@ impl VectorizedFilter {
         match (column.data_type(), value) {
             (DataType::Int32, ScalarValue::Int32(Some(val))) => {
                 let array = column.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(arrow::compute::kernels::cmp::gt(array, *val).map_err(|e| e.to_string())?)
+                Ok(arrow::compute::kernels::cmp::gt(array as &dyn arrow::array::Datum, &ScalarValue::Int32(Some(*val)) as &dyn arrow::array::Datum).map_err(|e| e.to_string())?)
             },
             (DataType::Int64, ScalarValue::Int64(Some(val))) => {
                 let array = column.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(arrow::compute::kernels::cmp::gt(array, *val).map_err(|e| e.to_string())?)
+                Ok(arrow::compute::kernels::cmp::gt(array as &dyn arrow::array::Datum, &ScalarValue::Int64(Some(*val)) as &dyn arrow::array::Datum).map_err(|e| e.to_string())?)
             },
             (DataType::Float32, ScalarValue::Float32(Some(val))) => {
                 let array = column.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(arrow::compute::kernels::cmp::gt(array, *val).map_err(|e| e.to_string())?)
+                Ok(arrow::compute::kernels::cmp::gt(array as &dyn arrow::array::Datum, &ScalarValue::Float32(Some(*val)) as &dyn arrow::array::Datum).map_err(|e| e.to_string())?)
             },
             (DataType::Float64, ScalarValue::Float64(Some(val))) => {
                 let array = column.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(arrow::compute::kernels::cmp::gt(array, *val).map_err(|e| e.to_string())?)
+                Ok(arrow::compute::kernels::cmp::gt(array as &dyn arrow::array::Datum, &ScalarValue::Float64(Some(*val)) as &dyn arrow::array::Datum).map_err(|e| e.to_string())?)
             },
             _ => Err(format!("Unsupported type combination: {:?} vs {:?}", column.data_type(), value))
         }

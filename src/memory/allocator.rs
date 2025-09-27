@@ -27,13 +27,12 @@ use std::ptr::{NonNull, null_mut};
 use std::mem;
 
 /// 内存分配器类型
+#[derive(Debug, Clone)]
 pub enum AllocatorType {
     /// 系统默认分配器
     System,
     /// jemalloc
     Jemalloc,
-    /// mimalloc
-    Mimalloc,
     /// 混合分配器
     Hybrid,
 }
@@ -51,7 +50,7 @@ pub struct HighPerformanceAllocator {
 }
 
 /// 内存分配统计
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AllocationStats {
     /// 总分配次数
     total_allocations: AtomicUsize,
@@ -208,10 +207,6 @@ impl HighPerformanceAllocator {
                 // 使用jemalloc分配器
                 self.jemalloc_alloc(aligned_layout)
             },
-            AllocatorType::Mimalloc => {
-                // 使用mimalloc分配器
-                self.mimalloc_alloc(aligned_layout)
-            },
             AllocatorType::Hybrid => {
                 // 根据大小选择分配器
                 if aligned_layout.size() < 1024 {
@@ -222,8 +217,8 @@ impl HighPerformanceAllocator {
                         System.alloc(aligned_layout)
                     }
                 } else {
-                    // 大对象使用系统分配器
-                    System.alloc(aligned_layout)
+                    // 大对象使用jemalloc
+                    self.jemalloc_alloc(aligned_layout)
                 }
             },
         };
@@ -242,6 +237,7 @@ impl HighPerformanceAllocator {
     fn jemalloc_alloc(&self, layout: Layout) -> *mut u8 {
         // 使用jemalloc进行分配
         // 这里需要链接jemalloc库
+        #[cfg(feature = "jemalloc")]
         unsafe {
             let ptr = jemalloc_sys::malloc(layout.size());
             if ptr.is_null() {
@@ -250,33 +246,32 @@ impl HighPerformanceAllocator {
                 ptr as *mut u8
             }
         }
-    }
-    
-    /// mimalloc分配实现
-    fn mimalloc_alloc(&self, layout: Layout) -> *mut u8 {
-        // 使用mimalloc进行分配
-        // 这里需要链接mimalloc库
-        unsafe {
-            let ptr = mimalloc_sys::mi_malloc(layout.size());
-            if ptr.is_null() {
-                std::ptr::null_mut()
-            } else {
-                ptr as *mut u8
-            }
+        #[cfg(not(feature = "jemalloc"))]
+        {
+            // 回退到系统分配器
+            self.system_alloc(layout)
         }
     }
+    
     
     /// jemalloc释放实现
     fn jemalloc_dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        #[cfg(feature = "jemalloc")]
         unsafe {
             jemalloc_sys::free(ptr as *mut std::ffi::c_void);
         }
+        #[cfg(not(feature = "jemalloc"))]
+        {
+            // 回退到系统分配器
+            self.system_dealloc(ptr, _layout);
+        }
     }
     
-    /// mimalloc释放实现
-    fn mimalloc_dealloc(&self, ptr: *mut u8, _layout: Layout) {
+    
+    /// 系统分配器释放实现
+    fn system_dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
-            mimalloc_sys::mi_free(ptr as *mut std::ffi::c_void);
+            std::alloc::dealloc(ptr, layout);
         }
     }
 

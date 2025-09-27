@@ -169,7 +169,8 @@ impl OneEngine {
         
         // Execute using vectorized driver
         let mut driver = self.vectorized_driver.write().await;
-        let results = driver.execute_query(query_plan).await?;
+        let results = driver.execute_query(query_plan).await
+            .map_err(|e| anyhow::anyhow!("Query execution failed: {}", e))?;
         
         info!("Pipeline execution completed: {} batches", results.len());
         Ok(results)
@@ -184,7 +185,8 @@ impl OneEngine {
         
         // Execute using vectorized driver
         let mut driver = self.vectorized_driver.write().await;
-        let results = driver.execute_query(query_plan).await?;
+        let results = driver.execute_query(query_plan).await
+            .map_err(|e| anyhow::anyhow!("Query execution failed: {}", e))?;
         
         if results.is_empty() {
             return Err(anyhow::anyhow!("No results from task execution"));
@@ -227,7 +229,7 @@ impl OneEngine {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Filter { 
-                                    predicate: FilterPredicate::Gt {
+                                    predicate: FilterPredicate::GreaterThan {
                                         column: "value".to_string(),
                                         value: datafusion_common::ScalarValue::Int32(Some(0)),
                                     },
@@ -242,7 +244,7 @@ impl OneEngine {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Project { 
-                                    expressions: vec![ProjectionExpression::Column("id".to_string())],
+                                    expressions: vec![ProjectionExpression::column("id".to_string())],
                                     output_schema: Arc::new(Schema::new(vec![
                                         Field::new("id", DataType::Int32, false),
                                     ])),

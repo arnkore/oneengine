@@ -252,11 +252,6 @@ impl Worker {
         Ok(())
     }
     
-    /// 获取当前负载
-    pub async fn get_current_load(&self) -> usize {
-        let load = self.current_load.read().await;
-        *load
-    }
     
     /// 设置当前负载
     pub async fn set_current_load(&self, load: usize) {
@@ -415,7 +410,7 @@ impl Worker {
         let mut aggregated_fields = Vec::new();
         
         for agg_func in agg_functions {
-            match agg_func {
+            match *agg_func {
                 "count" => {
                     let count = batch.num_rows() as i64;
                     aggregated_columns.push(Arc::new(Int64Array::from(vec![Some(count)])) as ArrayRef);

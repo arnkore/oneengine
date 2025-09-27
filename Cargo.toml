@@ -56,7 +56,8 @@ object_store = "0.10"
 
 # Memory management
 bytes = "1.5"
-mimalloc = { version = "0.1", default-features = false }
+jemalloc = { version = "0.3", optional = true }
+jemalloc-sys = { version = "0.3", optional = true }
 lz4_flex = "0.11"
 zstd = "0.13"
 flate2 = "1.0"
