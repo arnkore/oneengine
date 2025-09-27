@@ -9,6 +9,8 @@ pub mod executor;
 pub mod protocol;
 pub mod memory;
 pub mod utils;
+pub mod columnar;
+pub mod execution;
 
 // Re-export commonly used types
 pub use core::engine::OneEngine;
