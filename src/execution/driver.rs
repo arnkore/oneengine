@@ -1,4 +1,4 @@
-use crate::execution::operator::BoxedOperator;
+use crate::execution::vectorized_operator::BoxedOperator;
 use crate::execution::context::ExecContext;
 use crate::push_runtime::{Event, event_loop::EventLoop, OperatorContext, OpStatus, outbox::Outbox, PortId, OperatorId};
 use crate::push_runtime::metrics::SimpleMetricsCollector;
