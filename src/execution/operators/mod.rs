@@ -9,6 +9,7 @@ pub mod sort_topn;
 pub mod local_shuffle;
 pub mod scan_parquet;
 pub mod spill_manager;
+pub mod adaptive_batch;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
