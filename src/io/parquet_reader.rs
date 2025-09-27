@@ -160,6 +160,7 @@ impl ParquetReader {
         
         let metadata = self.metadata.as_ref().unwrap();
         let schema = metadata.file_metadata().schema();
+        let schema_descr = metadata.file_metadata().schema_descr();
         
         // 创建列索引映射
         let mut column_indices = Vec::new();
