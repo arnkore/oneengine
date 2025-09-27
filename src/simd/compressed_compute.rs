@@ -171,13 +171,18 @@ impl DictionarySimdFilter {
         // 使用SIMD优化字典值比较
         for (left_idx, left_value) in left_info.values.iter().enumerate() {
             for (right_idx, right_value) in right_info.values.iter().enumerate() {
-                if self.string_comparator.compare_equal(left_value.as_bytes(), right_value.as_bytes()) {
+                if Self::compare_strings_static(left_value.as_bytes(), right_value.as_bytes()) {
                     join_pairs.push((left_idx, right_idx));
                 }
             }
         }
         
         Ok(join_pairs)
+    }
+    
+    /// 静态版本的字符串比较函数
+    fn compare_strings_static(left: &[u8], right: &[u8]) -> bool {
+        left == right
     }
 }
 

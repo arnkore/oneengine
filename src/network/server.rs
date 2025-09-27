@@ -452,7 +452,7 @@ impl ZeroCopySerializer {
         // 写入数据
         self.buffer.put_slice(&compressed);
         
-        Ok(self.buffer.freeze())
+        Ok(self.buffer.clone().freeze())
     }
 
     /// 反序列化数据

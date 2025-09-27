@@ -179,7 +179,7 @@ impl<T> LockFreeRingBuffer<T> {
         // 写入元素
         unsafe {
             let ptr = self.buffer.as_ptr().add(write_pos & self.mask);
-            std::ptr::write(ptr, item);
+            std::ptr::write(ptr as *mut T, item);
         }
 
         // 更新写入位置
@@ -343,10 +343,12 @@ impl BatchWaker {
 
     /// 等待唤醒
     pub fn wait(&self) {
+        let current_thread = thread::current();
+        let current_thread_id = current_thread.id();
         let mut waiting_threads = self.waiting_threads.lock().unwrap();
-        waiting_threads.push_back(thread::current());
+        waiting_threads.push_back(current_thread);
         
-        while waiting_threads.contains(&thread::current()) {
+        while waiting_threads.iter().any(|t| t.id() == current_thread_id) {
             waiting_threads = self.condvar.wait(waiting_threads).unwrap();
         }
     }
