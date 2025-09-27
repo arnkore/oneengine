@@ -429,7 +429,7 @@ impl ScanOptimizer {
         };
         
         Ok(FileMetadata {
-            estimated_rows,
+            estimated_rows: estimated_rows as u64,
             estimated_size: file_size,
             column_count: 10,
             has_page_index: true,
