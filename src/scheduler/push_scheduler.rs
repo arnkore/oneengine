@@ -218,7 +218,8 @@ impl PushScheduler {
         if let Some(ref driver) = *driver {
             // Convert pipeline to query plan and execute
             let query_plan = self.convert_pipeline_to_query_plan(pipeline).await?;
-            let results = driver.execute_query(query_plan).await?;
+            let results = driver.execute_query(query_plan).await
+                .map_err(|e| anyhow::anyhow!("Query execution failed: {}", e))?;
             Ok(results)
         } else {
             Err(anyhow::anyhow!("Vectorized driver not set"))
@@ -231,7 +232,8 @@ impl PushScheduler {
         if let Some(ref driver) = *driver {
             // Convert task to query plan and execute
             let query_plan = self.convert_task_to_query_plan(task).await?;
-            let results = driver.execute_query(query_plan).await?;
+            let results = driver.execute_query(query_plan).await
+                .map_err(|e| anyhow::anyhow!("Query execution failed: {}", e))?;
             if results.is_empty() {
                 return Err(anyhow::anyhow!("No results from task execution"));
             }
@@ -275,7 +277,7 @@ impl PushScheduler {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Filter { 
-                                    predicate: FilterPredicate::Gt {
+                                    predicate: FilterPredicate::GreaterThan {
                                         column: "value".to_string(),
                                         value: ScalarValue::Int32(Some(0)),
                                     },
@@ -290,7 +292,7 @@ impl PushScheduler {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Project { 
-                                    expressions: vec![ProjectionExpression::Column("id".to_string())],
+                                    expressions: vec![ProjectionExpression::column("id".to_string())],
                                     output_schema: Arc::new(Schema::new(vec![
                                         Field::new("id", DataType::Int32, false),
                                     ])),

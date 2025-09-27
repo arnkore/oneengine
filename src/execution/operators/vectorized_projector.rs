@@ -90,6 +90,13 @@ pub enum ProjectionExpression {
     Cast { expr: Box<ProjectionExpression>, target_type: DataType },
 }
 
+impl ProjectionExpression {
+    /// 创建列引用
+    pub fn column(name: String) -> Self {
+        Self::Column { index: 0, name }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ArithmeticOp {
     Add, Subtract, Multiply, Divide, Modulo, Power,

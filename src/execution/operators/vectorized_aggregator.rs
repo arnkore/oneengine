@@ -921,7 +921,9 @@ impl Operator for VectorizedAggregator {
     fn name(&self) -> &str {
         &self.name
     }
-    
+}
+
+impl VectorizedAggregator {
     /// 直接更新求和状态（避免借用检查问题）
     fn update_sum_state_direct(state: &mut AggregationState, batch: &RecordBatch, column: usize, row_idx: usize) -> Result<(), String> {
         if let AggregationState::Sum { sum } = state {

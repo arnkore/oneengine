@@ -81,7 +81,7 @@ pub enum OpStatus {
 }
 
 /// 算子接口
-pub trait Operator: Send {
+pub trait Operator: Send + Sync {
     /// 注册时调用
     fn on_register(&mut self, ctx: OperatorContext) -> Result<()>;
     
