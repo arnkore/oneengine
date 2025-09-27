@@ -42,6 +42,15 @@ OneEngine is a high-performance, unified native execution engine designed to ser
 - **Different Group Sizes**: 205μs (1 col) → 273μs (3 cols)
 - **Aggregation Functions**: ~124μs (COUNT/SUM/AVG/MAX/MIN)
 
+#### Phase 1 - Top-N Operator
+- **Top-N Processing (100 rows)**: ~6.1μs
+- **Top-N Processing (1k rows)**: ~35.5μs
+- **Top-N Processing (10k rows)**: ~351μs
+- **Top-N Processing (100k rows)**: ~3.79ms
+- **Different Limits**: 366μs (limit=1) → 405μs (limit=1000)
+- **Sort Columns**: 343μs (1 col) → 387μs (3 cols)
+- **Multiple Batches**: 35μs (1 batch) → 693μs (20 batches)
+
 ## Architecture
 
 ### Core Components
