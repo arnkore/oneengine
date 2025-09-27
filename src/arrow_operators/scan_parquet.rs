@@ -2,8 +2,8 @@
 //! 
 //! 基于Arrow的Parquet文件扫描实现，支持RowGroup剪枝和PageIndex选择
 
-use super::{BaseOperator, SingleInputOperator, MetricsSupport, OperatorMetrics};
-use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
+use super::{BaseOperator, SingleInputOperator, MetricsSupport, OperatorMetrics, RuntimeFilterSupport};
+use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId, RuntimeFilter};
 use crate::io::parquet_reader::{ParquetReader, ParquetReaderConfig, ColumnSelection, Predicate};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
@@ -55,6 +55,8 @@ pub struct ScanParquetOperator {
     batch_queue: VecDeque<RecordBatch>,
     /// 是否已完成扫描
     scan_completed: bool,
+    /// 运行时过滤器
+    runtime_filters: Vec<RuntimeFilter>,
 }
 
 impl ScanParquetOperator {
@@ -77,6 +79,7 @@ impl ScanParquetOperator {
             reader: None,
             batch_queue: VecDeque::new(),
             scan_completed: false,
+            runtime_filters: Vec::new(),
         }
     }
     
@@ -107,20 +110,61 @@ impl ScanParquetOperator {
     /// 处理扫描逻辑
     fn process_scan(&mut self, out: &mut Outbox) -> OpStatus {
         if let Some(batch) = self.batch_queue.pop_front() {
+            // 应用运行时过滤器
+            let filtered_batch = match self.apply_runtime_filters(batch) {
+                Ok(batch) => batch,
+                Err(e) => {
+                    tracing::error!("Failed to apply runtime filters: {}", e);
+                    return OpStatus::Error(format!("Failed to apply runtime filters: {}", e));
+                }
+            };
+            
             // 发送数据到下游
-            if let Err(e) = out.push(0, batch.clone()) {
+            if let Err(e) = out.push(0, filtered_batch.clone()) {
                 tracing::error!("Failed to push batch: {}", e);
                 return OpStatus::Error(format!("Failed to push batch: {}", e));
             }
             
             // 记录指标
-            self.record_metrics(&batch, std::time::Duration::from_millis(0));
+            self.record_metrics(&filtered_batch, std::time::Duration::from_millis(0));
             
             OpStatus::Ready
         } else {
             // 没有更多数据，标记完成
             self.scan_completed = true;
             OpStatus::Finished
+        }
+    }
+
+    /// 应用运行时过滤器
+    fn apply_runtime_filters(&self, batch: RecordBatch) -> Result<RecordBatch> {
+        let mut filtered_batch = batch;
+        
+        for filter in &self.runtime_filters {
+            filtered_batch = self.apply_single_filter(filtered_batch, filter)?;
+        }
+        
+        Ok(filtered_batch)
+    }
+
+    /// 应用单个过滤器
+    fn apply_single_filter(&self, batch: RecordBatch, filter: &RuntimeFilter) -> Result<RecordBatch> {
+        match filter {
+            RuntimeFilter::Bloom { column, filter: _ } => {
+                // TODO: 实现Bloom过滤器
+                // 目前返回原批次
+                Ok(batch)
+            }
+            RuntimeFilter::In { column, values } => {
+                // TODO: 实现IN过滤器
+                // 目前返回原批次
+                Ok(batch)
+            }
+            RuntimeFilter::MinMax { column, min, max } => {
+                // TODO: 实现MinMax过滤器
+                // 目前返回原批次
+                Ok(batch)
+            }
         }
     }
 }
@@ -198,5 +242,16 @@ impl MetricsSupport for ScanParquetOperator {
     
     fn get_metrics(&self) -> OperatorMetrics {
         self.metrics.clone()
+    }
+}
+
+impl RuntimeFilterSupport for ScanParquetOperator {
+    fn apply_runtime_filter(&mut self, filter: &RuntimeFilter) -> Result<()> {
+        self.runtime_filters.push(filter.clone());
+        Ok(())
+    }
+    
+    fn has_runtime_filter(&self) -> bool {
+        !self.runtime_filters.is_empty()
     }
 }
