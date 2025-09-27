@@ -80,13 +80,6 @@ harness = false
 name = "hash_agg_bench"
 harness = false
 
-[[bench]]
-name = "topn_bench"
-harness = false
-
-[[bench]]
-name = "local_shuffle_bench"
-harness = false
 
 [[bench]]
 name = "memory_management_bench"
