@@ -186,13 +186,13 @@ pub struct AutoTuner {
 #[derive(Debug, Clone)]
 pub struct TuningRecord {
     /// 时间戳
-    timestamp: Instant,
+    pub timestamp: Instant,
     /// 参数配置
-    config: ParameterConfig,
+    pub config: ParameterConfig,
     /// 性能指标
-    metrics: PerformanceMetrics,
+    pub metrics: PerformanceMetrics,
     /// 调参效果
-    improvement: f64,
+    pub improvement: f64,
 }
 
 /// 参数配置
@@ -439,7 +439,7 @@ impl ExtremeObservability {
     fn calculate_memory_usage(&self) -> usize {
         // 基于当前内存分配和缓存使用情况
         let base_memory = 1024 * 1024; // 基础内存1MB
-        let cache_memory = self.metrics_collector.cache_size.load(Ordering::Relaxed);
+        let cache_memory = self.metrics_collector.cache_size.load(Ordering::Relaxed) as usize;
         let spill_ratio = *self.metrics_collector.spill_ratio.lock().unwrap();
         let spill_memory = (self.metrics_collector.spill_size.load(Ordering::Relaxed) as f64 * spill_ratio) as usize;
         
@@ -621,7 +621,7 @@ impl AutoTuner {
         
         // 基于历史数据调整参数
         if self.tuning_history.len() > 10 {
-            let recent_records = &self.tuning_history[self.tuning_history.len()-10..];
+            let recent_records: Vec<_> = self.tuning_history.iter().rev().take(10).collect();
             let avg_throughput: f64 = recent_records.iter()
                 .map(|r| r.metrics.throughput)
                 .sum::<f64>() / recent_records.len() as f64;

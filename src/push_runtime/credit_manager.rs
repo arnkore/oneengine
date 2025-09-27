@@ -27,9 +27,9 @@ use crate::push_runtime::PortId;
 #[derive(Debug, Default)]
 pub struct CreditManager {
     /// 端口信用
-    credits: HashMap<PortId, u32>,
+    pub credits: HashMap<PortId, u32>,
     /// 最大信用
-    max_credits: HashMap<PortId, u32>,
+    pub max_credits: HashMap<PortId, u32>,
 }
 
 impl CreditManager {

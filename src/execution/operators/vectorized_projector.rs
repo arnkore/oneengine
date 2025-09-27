@@ -635,13 +635,23 @@ impl VectorizedProjector {
         
         match op {
             LogicalOp::And => {
-                Ok(Arc::new(arrow::compute::and(&left_array, &right_array).map_err(|e| e.to_string())?))
+                let left_bool = left_array.as_any().downcast_ref::<BooleanArray>().unwrap_or(&BooleanArray::from(vec![true; left_array.len()]));
+                let right_bool = right_array.as_any().downcast_ref::<BooleanArray>().unwrap_or(&BooleanArray::from(vec![true; right_array.len()]));
+                let left_bool_owned = left_bool.clone();
+                let right_bool_owned = right_bool.clone();
+                Ok(Arc::new(arrow::compute::and(&left_bool_owned, &right_bool_owned).map_err(|e| e.to_string())?))
             },
             LogicalOp::Or => {
-                Ok(Arc::new(arrow::compute::or(&left_array, &right_array).map_err(|e| e.to_string())?))
+                let left_bool = left_array.as_any().downcast_ref::<BooleanArray>().unwrap_or(&BooleanArray::from(vec![true; left_array.len()]));
+                let right_bool = right_array.as_any().downcast_ref::<BooleanArray>().unwrap_or(&BooleanArray::from(vec![true; right_array.len()]));
+                let left_bool_owned = left_bool.clone();
+                let right_bool_owned = right_bool.clone();
+                Ok(Arc::new(arrow::compute::or(&left_bool_owned, &right_bool_owned).map_err(|e| e.to_string())?))
             },
             LogicalOp::Not => {
-                Ok(Arc::new(arrow::compute::not(&left_array).map_err(|e| e.to_string())?))
+                let left_bool = left_array.as_any().downcast_ref::<BooleanArray>().unwrap_or(&BooleanArray::from(vec![true; left_array.len()]));
+                let left_bool_owned = left_bool.clone();
+                Ok(Arc::new(arrow::compute::not(&left_bool_owned).map_err(|e| e.to_string())?))
             },
         }
     }

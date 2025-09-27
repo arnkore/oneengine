@@ -623,16 +623,16 @@ impl VectorizedAggregator {
     fn add_scalar_values(&self, left: &ScalarValue, right: &ScalarValue) -> Result<ScalarValue, String> {
         match (left, right) {
             (ScalarValue::Int32(Some(l)), ScalarValue::Int32(Some(r))) => {
-                Ok(ScalarValue::Int32(Some(l + r)))
+                Ok(ScalarValue::Int32(Some(*l + *r)))
             },
             (ScalarValue::Int64(Some(l)), ScalarValue::Int64(Some(r))) => {
-                Ok(ScalarValue::Int64(Some(l + r)))
+                Ok(ScalarValue::Int64(Some(*l + *r)))
             },
             (ScalarValue::Float32(Some(l)), ScalarValue::Float32(Some(r))) => {
-                Ok(ScalarValue::Float32(Some(l + r)))
+                Ok(ScalarValue::Float32(Some(*l + *r)))
             },
             (ScalarValue::Float64(Some(l)), ScalarValue::Float64(Some(r))) => {
-                Ok(ScalarValue::Float64(Some(l + r)))
+                Ok(ScalarValue::Float64(Some(*l + *r)))
             },
             _ => Err(format!("Unsupported addition: {:?} + {:?}", left, right))
         }
@@ -735,7 +735,7 @@ impl VectorizedAggregator {
     /// 完成聚合状态
     fn finalize_agg_state(&self, state: &AggregationState, func: &AggregationFunction) -> Result<ScalarValue, String> {
         match (state, func) {
-            (AggregationState::Count { count }, AggregationFunction::Count) => {
+            (AggregationState::Count { count }, AggregationFunction::Count { .. }) => {
                 Ok(ScalarValue::UInt64(Some(*count)))
             },
             (AggregationState::Sum { sum }, AggregationFunction::Sum { .. }) => {
@@ -753,16 +753,16 @@ impl VectorizedAggregator {
                 }
             },
             (AggregationState::Min { min }, AggregationFunction::Min { .. }) => {
-                Ok(min.clone())
+                Ok(min.clone().unwrap_or(ScalarValue::Null))
             },
             (AggregationState::Max { max }, AggregationFunction::Max { .. }) => {
-                Ok(max.clone())
+                Ok(max.clone().unwrap_or(ScalarValue::Null))
             },
             (AggregationState::First { first }, AggregationFunction::First { .. }) => {
-                Ok(first.clone())
+                Ok(first.clone().unwrap_or(ScalarValue::Null))
             },
             (AggregationState::Last { last }, AggregationFunction::Last { .. }) => {
-                Ok(last.clone())
+                Ok(last.clone().unwrap_or(ScalarValue::Null))
             },
             (AggregationState::DistinctCount { distinct_values }, AggregationFunction::DistinctCount { .. }) => {
                 Ok(ScalarValue::UInt64(Some(distinct_values.len() as u64)))
@@ -821,7 +821,7 @@ impl VectorizedAggregator {
     /// 获取聚合函数名称
     fn get_agg_function_name(&self, func: &AggregationFunction) -> String {
         match func {
-            AggregationFunction::Count => "count".to_string(),
+            AggregationFunction::Count { .. } => "count".to_string(),
             AggregationFunction::Sum { .. } => "sum".to_string(),
             AggregationFunction::Avg { .. } => "avg".to_string(),
             AggregationFunction::Min { .. } => "min".to_string(),
@@ -1122,16 +1122,16 @@ impl VectorizedAggregator {
     fn add_scalar_values_static(left: &mut ScalarValue, right: &ScalarValue) -> Result<ScalarValue, String> {
         match (left, right) {
             (ScalarValue::Int32(Some(l)), ScalarValue::Int32(Some(r))) => {
-                Ok(ScalarValue::Int32(Some(l + r)))
+                Ok(ScalarValue::Int32(Some(*l + *r)))
             },
             (ScalarValue::Int64(Some(l)), ScalarValue::Int64(Some(r))) => {
-                Ok(ScalarValue::Int64(Some(l + r)))
+                Ok(ScalarValue::Int64(Some(*l + *r)))
             },
             (ScalarValue::Float32(Some(l)), ScalarValue::Float32(Some(r))) => {
-                Ok(ScalarValue::Float32(Some(l + r)))
+                Ok(ScalarValue::Float32(Some(*l + *r)))
             },
             (ScalarValue::Float64(Some(l)), ScalarValue::Float64(Some(r))) => {
-                Ok(ScalarValue::Float64(Some(l + r)))
+                Ok(ScalarValue::Float64(Some(*l + *r)))
             },
             _ => Err("Cannot add scalar values of different types".to_string()),
         }

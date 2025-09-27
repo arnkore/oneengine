@@ -209,6 +209,10 @@ impl AdaptiveBatchingManager {
             avg_block_time,
             avg_processing_time,
             throughput,
+            operator_blocking_time: Duration::from_millis(0),
+            memory_usage: 0,
+            cpu_usage: 0.0,
+            memory_pressure: 0.0,
         }
     }
     

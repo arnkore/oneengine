@@ -383,7 +383,7 @@ impl SkewHandler {
         
         // 发送盐化后的批次
         for (i, salted_batch) in salted_batches.into_iter().enumerate() {
-            outbox.send(0, Event::Data { port: i as PortId, batch: salted_batch });
+            outbox.send(i as PortId, salted_batch);
         }
         
         Ok(OpStatus::Ready)
@@ -440,12 +440,16 @@ impl SkewHandler {
         let mut key_to_partition = std::collections::HashMap::new();
         
         // 为每个重尾键分配一个专门的分区
-        for (i, key) in heavy_tail_keys.iter().enumerate() {
+        for (i, key) in heavy_tail_keys_str.iter().enumerate() {
             key_to_partition.insert(key.clone(), i);
         }
         
         // 将批次按键值分配到不同分区
-        let batches_by_key = self.split_batch_by_keys(batch, &heavy_tail_keys)?;
+        // 将ScalarValue转换为String
+        let heavy_tail_keys_str: Vec<String> = heavy_tail_keys.iter()
+            .map(|v| format!("{:?}", v))
+            .collect();
+        let batches_by_key = self.split_batch_by_keys(&batch, &heavy_tail_keys_str)?;
         
         for (key, key_batches) in batches_by_key {
             if let Some(&partition_id) = key_to_partition.get(&key) {
@@ -459,7 +463,7 @@ impl SkewHandler {
         // 发送分区后的批次
         for (i, partition_batches) in partitioned_batches.into_iter().enumerate() {
             for batch in partition_batches {
-                outbox.send(0, Event::Data { port: i as PortId, batch });
+                outbox.send(i as PortId, batch);
             }
         }
         
@@ -515,7 +519,7 @@ impl SkewHandler {
         for (key, channel) in &mut self.heavy_tail_channels {
             if channel.status == ChannelStatus::Processing && !channel.buffer.is_empty() {
                 if let Some(batch) = channel.buffer.pop_front() {
-                    outbox.send(0, Event::Data { port: channel.channel_id, batch });
+                    outbox.send(channel.channel_id, batch);
                 }
                 
                 if channel.buffer.is_empty() {

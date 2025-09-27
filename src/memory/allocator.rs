@@ -225,7 +225,7 @@ impl HighPerformanceAllocator {
 
         if ptr.is_null() {
             self.stats.record_allocation_failure();
-            null_mut()
+            return null_mut();
         } else {
             self.stats.record_allocation(aligned_layout.size(), aligned_layout.align() > 1);
         }
@@ -344,7 +344,14 @@ impl HighPerformanceAllocator {
 
     /// 获取统计信息
     pub fn get_stats(&self) -> AllocationStats {
-        self.stats.clone()
+        AllocationStats {
+            total_allocations: AtomicUsize::new(self.stats.total_allocations.load(std::sync::atomic::Ordering::Relaxed)),
+            total_deallocations: AtomicUsize::new(self.stats.total_deallocations.load(std::sync::atomic::Ordering::Relaxed)),
+            current_allocated: AtomicUsize::new(self.stats.current_allocated.load(std::sync::atomic::Ordering::Relaxed)),
+            peak_allocated: AtomicUsize::new(self.stats.peak_allocated.load(std::sync::atomic::Ordering::Relaxed)),
+            allocation_failures: AtomicUsize::new(self.stats.allocation_failures.load(std::sync::atomic::Ordering::Relaxed)),
+            aligned_allocations: AtomicUsize::new(self.stats.aligned_allocations.load(std::sync::atomic::Ordering::Relaxed)),
+        }
     }
 }
 

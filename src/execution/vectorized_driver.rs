@@ -345,7 +345,7 @@ impl VectorizedDriver {
             if let OperatorType::Scan { file_path } = &input_operator.operator_type {
                 let start_scan_event = Event::StartScan { file_path: file_path.clone() };
                 self.event_loop.process_event(start_scan_event)
-                    .map_err(|e| anyhow::anyhow!("Event processing failed: {}", e))?;
+                    .map_err(|e| format!("Event processing failed: {}", e))?;
             }
         }
         

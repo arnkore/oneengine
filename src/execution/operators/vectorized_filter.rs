@@ -416,7 +416,7 @@ impl Operator for VectorizedFilter {
                     }
                 } else {
                     warn!("未知的输入端口: {}", port);
-                    OpStatus::Error
+                    OpStatus::Error("未知的输入端口".to_string())
                 }
             },
             Event::EndOfStream { port } => {
