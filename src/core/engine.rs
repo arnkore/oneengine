@@ -1,6 +1,10 @@
 use crate::scheduler::push_scheduler::PushScheduler;
 use crate::executor::executor::Executor;
 use crate::executor::vectorized_driver::VectorizedDriver;
+use crate::io::vectorized_scan_operator::VectorizedScanConfig;
+use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
+use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
+use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::protocol::adapter::ProtocolAdapter;
 use crate::utils::config::Config;
 use crate::core::pipeline::Pipeline;
@@ -72,6 +76,28 @@ impl OneEngine {
             driver.start().await?;
         }
         info!("Vectorized driver started");
+        
+        // Set vectorized driver in scheduler
+        {
+            let driver = self.vectorized_driver.read().await;
+            // We need to clone the driver for the scheduler
+            // This is a simplified approach - in production, we'd use Arc<VectorizedDriver>
+            // For now, we'll create a new driver instance
+            let driver_config = crate::executor::vectorized_driver::VectorizedDriverConfig {
+                max_workers: self.config.executor.max_workers,
+                memory_limit: self.config.executor.memory_limit,
+                batch_size: self.config.executor.batch_size,
+                enable_vectorization: true,
+                enable_simd: true,
+                enable_compression: true,
+                enable_prefetch: true,
+                enable_numa_aware: true,
+                enable_adaptive_batching: true,
+            };
+            let scheduler_driver = VectorizedDriver::new(driver_config);
+            self.scheduler.set_vectorized_driver(scheduler_driver).await?;
+        }
+        info!("Vectorized driver set in scheduler");
 
         // Start protocol adapter
         self.protocol_adapter.start().await?;

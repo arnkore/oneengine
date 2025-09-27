@@ -1,6 +1,6 @@
-//! 网络优化
+//! 网络服务器
 //! 
-//! tokio + quinn/tonic，零拷贝序列化，Bytes + length-prefixed
+//! 基于 tokio 的高性能网络服务器，支持零拷贝序列化、压缩和长度前缀编码
 
 use std::sync::Arc;
 use std::net::{SocketAddr, IpAddr, Ipv4Addr};

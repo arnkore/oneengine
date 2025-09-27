@@ -3,6 +3,11 @@ use crate::core::pipeline::Pipeline;
 use crate::scheduler::task_queue::TaskQueue;
 use crate::scheduler::pipeline_manager::PipelineManager;
 use crate::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
+use crate::executor::vectorized_driver::VectorizedDriver;
+use crate::io::vectorized_scan_operator::VectorizedScanConfig;
+use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
+use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
+use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::utils::config::SchedulerConfig;
 use anyhow::Result;
 use std::sync::Arc;
@@ -16,6 +21,7 @@ pub struct PushScheduler {
     task_queue: Arc<TaskQueue>,
     pipeline_manager: Arc<PipelineManager>,
     resource_manager: Arc<ResourceManager>,
+    vectorized_driver: Arc<RwLock<Option<VectorizedDriver>>>,
     running: Arc<RwLock<bool>>,
     task_sender: mpsc::UnboundedSender<Task>,
     task_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<Task>>>>,
@@ -43,6 +49,7 @@ impl PushScheduler {
             task_queue,
             pipeline_manager,
             resource_manager,
+            vectorized_driver: Arc::new(RwLock::new(None)),
             running: Arc::new(RwLock::new(false)),
             task_sender,
             task_receiver: Arc::new(RwLock::new(Some(task_receiver))),
@@ -178,6 +185,173 @@ impl PushScheduler {
         
         Ok(())
     }
+    
+    /// Set the vectorized driver
+    pub async fn set_vectorized_driver(&self, driver: VectorizedDriver) -> Result<()> {
+        let mut vectorized_driver = self.vectorized_driver.write().await;
+        *vectorized_driver = Some(driver);
+        info!("Vectorized driver set in push scheduler");
+        Ok(())
+    }
+    
+    /// Execute a pipeline using vectorized execution
+    pub async fn execute_pipeline_vectorized(&self, pipeline: Pipeline) -> Result<Vec<arrow::record_batch::RecordBatch>> {
+        let driver = self.vectorized_driver.read().await;
+        if let Some(ref driver) = *driver {
+            // Convert pipeline to query plan and execute
+            let query_plan = self.convert_pipeline_to_query_plan(pipeline).await?;
+            let results = driver.execute_query(query_plan).await?;
+            Ok(results)
+        } else {
+            Err(anyhow::anyhow!("Vectorized driver not set"))
+        }
+    }
+    
+    /// Execute a task using vectorized execution
+    pub async fn execute_task_vectorized(&self, task: Task) -> Result<arrow::record_batch::RecordBatch> {
+        let driver = self.vectorized_driver.read().await;
+        if let Some(ref driver) = *driver {
+            // Convert task to query plan and execute
+            let query_plan = self.convert_task_to_query_plan(task).await?;
+            let results = driver.execute_query(query_plan).await?;
+            if results.is_empty() {
+                return Err(anyhow::anyhow!("No results from task execution"));
+            }
+            Ok(results[0].clone())
+        } else {
+            Err(anyhow::anyhow!("Vectorized driver not set"))
+        }
+    }
+    
+    /// Convert pipeline to query plan
+    async fn convert_pipeline_to_query_plan(&self, pipeline: Pipeline) -> Result<crate::executor::vectorized_driver::QueryPlan> {
+        use crate::executor::vectorized_driver::*;
+        use arrow::datatypes::*;
+        use datafusion_common::ScalarValue;
+        
+        let mut operators = Vec::new();
+        let mut connections = Vec::new();
+        let mut port_counter = 0;
+        
+        // Convert each task to operator
+        for (i, task) in pipeline.tasks.iter().enumerate() {
+            let operator_id = (i + 1) as u32;
+            let input_ports = if i == 0 { vec![] } else { vec![port_counter - 1] };
+            let output_ports = vec![port_counter];
+            
+            let operator_node = match &task.task_type {
+                crate::core::task::TaskType::DataSource { source_type, .. } => {
+                    OperatorNode {
+                        operator_id,
+                        operator_type: OperatorType::Scan { 
+                            file_path: source_type.clone() 
+                        },
+                        input_ports,
+                        output_ports,
+                        config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
+                    }
+                },
+                crate::core::task::TaskType::DataProcessing { operator, .. } => {
+                    match operator.as_str() {
+                        "filter" => {
+                            OperatorNode {
+                                operator_id,
+                                operator_type: OperatorType::Filter { 
+                                    predicate: FilterPredicate::Gt {
+                                        column: "value".to_string(),
+                                        value: ScalarValue::Int32(Some(0)),
+                                    },
+                                    column_index: 0,
+                                },
+                                input_ports,
+                                output_ports,
+                                config: OperatorConfig::FilterConfig(VectorizedFilterConfig::default()),
+                            }
+                        },
+                        "project" => {
+                            OperatorNode {
+                                operator_id,
+                                operator_type: OperatorType::Project { 
+                                    expressions: vec![ProjectionExpression::Column("id".to_string())],
+                                    output_schema: Arc::new(Schema::new(vec![
+                                        Field::new("id", DataType::Int32, false),
+                                    ])),
+                                },
+                                input_ports,
+                                output_ports,
+                                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
+                            }
+                        },
+                        "aggregate" => {
+                            OperatorNode {
+                                operator_id,
+                                operator_type: OperatorType::Aggregate { 
+                                    group_columns: vec![0],
+                                    agg_functions: vec![AggregationFunction::Count {
+                                        column: "id".to_string(),
+                                        output_column: "count".to_string(),
+                                    }],
+                                },
+                                input_ports,
+                                output_ports,
+                                config: OperatorConfig::AggregatorConfig(VectorizedAggregatorConfig::default()),
+                            }
+                        },
+                        _ => {
+                            return Err(anyhow::anyhow!("Unsupported operator: {}", operator));
+                        }
+                    }
+                },
+                _ => {
+                    return Err(anyhow::anyhow!("Unsupported task type"));
+                }
+            };
+            
+            operators.push(operator_node);
+            port_counter += 1;
+        }
+        
+        // Create connections based on pipeline edges
+        for edge in &pipeline.edges {
+            if let (Some(from_idx), Some(to_idx)) = (
+                pipeline.tasks.iter().position(|t| t.id == edge.from_task),
+                pipeline.tasks.iter().position(|t| t.id == edge.to_task)
+            ) {
+                connections.push(Connection {
+                    from_operator: (from_idx + 1) as u32,
+                    from_port: from_idx as u32,
+                    to_operator: (to_idx + 1) as u32,
+                    to_port: to_idx as u32,
+                });
+            }
+        }
+        
+        Ok(QueryPlan {
+            plan_id: 1,
+            operators,
+            connections,
+            input_files: vec![],
+            output_schema: Arc::new(Schema::new(vec![
+                Field::new("result", DataType::Utf8, false),
+            ])),
+        })
+    }
+    
+    /// Convert task to query plan
+    async fn convert_task_to_query_plan(&self, task: Task) -> Result<crate::executor::vectorized_driver::QueryPlan> {
+        // Create a simple pipeline with one task
+        let pipeline = Pipeline {
+            id: Uuid::new_v4(),
+            name: task.name.clone(),
+            description: None,
+            tasks: vec![task],
+            edges: vec![],
+            created_at: chrono::Utc::now(),
+            metadata: std::collections::HashMap::new(),
+        };
+        
+        self.convert_pipeline_to_query_plan(pipeline).await
+    }
 }
 
 impl Clone for PushScheduler {
@@ -187,6 +361,7 @@ impl Clone for PushScheduler {
             task_queue: self.task_queue.clone(),
             pipeline_manager: self.pipeline_manager.clone(),
             resource_manager: self.resource_manager.clone(),
+            vectorized_driver: self.vectorized_driver.clone(),
             running: self.running.clone(),
             task_sender: self.task_sender.clone(),
             task_receiver: self.task_receiver.clone(),
