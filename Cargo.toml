@@ -85,6 +85,10 @@ harness = false
 name = "memory_management_bench"
 harness = false
 
+[[bench]]
+name = "hash_join_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
