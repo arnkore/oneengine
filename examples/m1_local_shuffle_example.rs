@@ -3,7 +3,7 @@
 //! 演示LocalShuffle算子如何将数据重分区到多个输出端口
 
 use oneengine::push_runtime::{event_loop::EventLoop, metrics::SimpleMetricsCollector};
-use oneengine::arrow_operators::local_shuffle::{LocalShuffleOperator, LocalShuffleConfig, PartitionStrategy};
+use oneengine::execution::operators::local_shuffle::{LocalShuffleOperator, LocalShuffleConfig, PartitionStrategy};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{Schema, Field, DataType};
 use arrow::array::{Int32Array, StringArray, Float64Array};

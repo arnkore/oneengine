@@ -2,7 +2,7 @@
 //! 
 //! 演示Sort/TopN算子的row encoding + IPC spill功能
 
-use oneengine::arrow_operators::sort_topn::{SortTopNOperator, SortConfig};
+use oneengine::execution::operators::sort_topn::{SortTopNOperator, SortConfig};
 use oneengine::push_runtime::event_loop::EventLoop;
 use oneengine::push_runtime::metrics::SimpleMetricsCollector;
 use arrow::record_batch::RecordBatch;

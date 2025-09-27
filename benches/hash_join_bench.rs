@@ -1,7 +1,7 @@
 //! HashJoin算子基准测试
 
 use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
-use oneengine::arrow_operators::hash_join::{HashJoinOperator, HashJoinConfig, JoinType, JoinMode};
+use oneengine::execution::operators::hash_join::{HashJoinOperator, HashJoinConfig, JoinType, JoinMode};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{Schema, Field, DataType};
 use arrow::array::{Int32Array, StringArray, Float64Array};

@@ -3,7 +3,7 @@
 //! 演示Scan(Parquet)->FilterProject->Agg(two-phase)->Sink的完整流程
 
 use oneengine::push_runtime::{event_loop::EventLoop, Event, OpStatus, OperatorContext, PortId, metrics::SimpleMetricsCollector};
-use oneengine::arrow_operators::{
+use oneengine::execution::operators::{
     scan_parquet::{ScanParquetOperator, ScanParquetConfig},
     filter_project::{FilterProjectOperator, FilterProjectConfig, FilterPredicate},
     hash_aggregation::{HashAggOperator, HashAggConfig, AggExpression, AggFunction}

@@ -306,7 +306,7 @@ src/
 │   ├── credit_manager.rs  # Credit-based backpressure
 │   ├── outbox.rs          # Operator output management
 │   └── metrics.rs         # Performance metrics
-├── arrow_operators/ # Arrow-based Operators
+├── execution/operators/ # Arrow-based Operators
 │   ├── filter_project.rs  # Filter/Project operations
 │   ├── hash_aggregation.rs # Hash aggregation
 │   ├── hash_join.rs       # Hash join operations

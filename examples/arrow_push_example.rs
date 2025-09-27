@@ -3,7 +3,7 @@
 //! 演示纯push事件驱动的执行架构
 
 use oneengine::push_runtime::{event_loop::EventLoop, PortId, OperatorId, MetricsCollector};
-use oneengine::arrow_operators::{
+use oneengine::execution::operators::{
     filter_project::{FilterProjectOperator, FilterProjectConfig},
     hash_aggregation::{HashAggOperator, HashAggConfig, AggExpression, AggFunction},
 };

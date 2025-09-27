@@ -3,7 +3,7 @@
 //! 演示Broadcast模式的HashJoin算子功能
 
 use oneengine::push_runtime::{event_loop::EventLoop, metrics::SimpleMetricsCollector};
-use oneengine::arrow_operators::hash_join::{HashJoinOperator, HashJoinConfig, JoinType, JoinMode};
+use oneengine::execution::operators::hash_join::{HashJoinOperator, HashJoinConfig, JoinType, JoinMode};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{Schema, Field, DataType};
 use arrow::array::{Int32Array, StringArray, Float64Array};

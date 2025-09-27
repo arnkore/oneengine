@@ -12,7 +12,6 @@ pub mod utils;
 pub mod columnar;
 pub mod execution;
 pub mod push_runtime;
-pub mod arrow_operators;
 pub mod io;
 
 // Re-export commonly used types

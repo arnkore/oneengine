@@ -2,8 +2,8 @@
 //! 
 //! 演示Agg/Sort/Join算子的spill功能
 
-use oneengine::arrow_operators::hash_aggregation::{HashAggOperator, HashAggConfig, AggExpression, AggFunction};
-use oneengine::arrow_operators::spill_manager::{SpillConfig, HysteresisManager, PartitionedSpillManager};
+use oneengine::execution::operators::hash_aggregation::{HashAggOperator, HashAggConfig, AggExpression, AggFunction};
+use oneengine::execution::operators::spill_manager::{SpillConfig, HysteresisManager, PartitionedSpillManager};
 use oneengine::push_runtime::event_loop::EventLoop;
 use oneengine::push_runtime::metrics::SimpleMetricsCollector;
 use arrow::record_batch::RecordBatch;
