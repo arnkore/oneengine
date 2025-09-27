@@ -141,8 +141,9 @@ impl SpillManager {
             spill_files.insert(filename, file_info.clone());
         }
 
-        // 更新内存使用量（简化实现）
-        self.update_memory_usage(-((batch.len() * 8) as isize));
+        // 更新内存使用量
+        let actual_batch_size = self.calculate_batch_memory_usage(batch);
+        self.update_memory_usage(-(actual_batch_size as isize));
 
         debug!(
             "Spilled batch to file: {} ({} bytes)",
@@ -190,7 +191,7 @@ impl SpillManager {
             writer.write_all(&compressed)?;
             
             total_size += compressed.len() + 4; // +4 for size header
-            total_memory += batch.len() * 8; // 简化实现
+            total_memory += self.calculate_batch_memory_usage(batch);
         }
 
         writer.flush()?;
@@ -469,5 +470,41 @@ mod tests {
         
         assert!(manager.should_spill(300)); // 800 + 300 > 1000
         assert!(!manager.should_spill(100)); // 800 + 100 <= 1000
+    }
+    
+    /// 计算批次的实际内存使用量
+    fn calculate_batch_memory_usage(&self, batch: &RecordBatch) -> usize {
+        let mut total_size = 0;
+        
+        for column in batch.columns() {
+            let column_size = match column.data_type() {
+                arrow::datatypes::DataType::Boolean => batch.num_rows() * 1,
+                arrow::datatypes::DataType::Int8 => batch.num_rows() * 1,
+                arrow::datatypes::DataType::Int16 => batch.num_rows() * 2,
+                arrow::datatypes::DataType::Int32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::Int64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::UInt8 => batch.num_rows() * 1,
+                arrow::datatypes::DataType::UInt16 => batch.num_rows() * 2,
+                arrow::datatypes::DataType::UInt32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::UInt64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::Float32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::Float64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::Utf8 => {
+                    if let Some(string_array) = column.as_any().downcast_ref::<arrow::array::StringArray>() {
+                        string_array.iter()
+                            .map(|s| s.map(|s| s.len()).unwrap_or(0))
+                            .sum::<usize>()
+                    } else {
+                        batch.num_rows() * 16
+                    }
+                },
+                _ => batch.num_rows() * 8,
+            };
+            
+            total_size += column_size;
+        }
+        
+        // 添加Arrow元数据开销
+        total_size + batch.num_columns() * 64
     }
 }

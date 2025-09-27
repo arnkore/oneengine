@@ -278,8 +278,40 @@ impl ArrowIpcSpillManager {
     
     /// 估算批次大小
     fn estimate_batch_size(&self, batch: &RecordBatch) -> usize {
-        // 简化的估算：行数 * 列数 * 8字节
-        batch.num_rows() * batch.num_columns() * 8
+        // 基于实际数据类型的精确估算
+        let mut total_size = 0;
+        
+        for column in batch.columns() {
+            let column_size = match column.data_type() {
+                arrow::datatypes::DataType::Boolean => batch.num_rows() * 1, // 1字节
+                arrow::datatypes::DataType::Int8 => batch.num_rows() * 1,
+                arrow::datatypes::DataType::Int16 => batch.num_rows() * 2,
+                arrow::datatypes::DataType::Int32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::Int64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::UInt8 => batch.num_rows() * 1,
+                arrow::datatypes::DataType::UInt16 => batch.num_rows() * 2,
+                arrow::datatypes::DataType::UInt32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::UInt64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::Float32 => batch.num_rows() * 4,
+                arrow::datatypes::DataType::Float64 => batch.num_rows() * 8,
+                arrow::datatypes::DataType::Utf8 => {
+                    // 字符串类型需要估算实际长度
+                    if let Some(string_array) = column.as_any().downcast_ref::<arrow::array::StringArray>() {
+                        string_array.iter()
+                            .map(|s| s.map(|s| s.len()).unwrap_or(0))
+                            .sum::<usize>()
+                    } else {
+                        batch.num_rows() * 16 // 默认估算
+                    }
+                },
+                _ => batch.num_rows() * 8, // 默认估算
+            };
+            
+            total_size += column_size;
+        }
+        
+        // 添加Arrow元数据开销
+        total_size + batch.num_columns() * 64 // 每列64字节元数据开销
     }
     
     /// 获取溢写文件列表

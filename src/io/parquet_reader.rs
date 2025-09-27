@@ -146,8 +146,8 @@ impl ParquetReader {
         }
         
         if !column_indices.is_empty() {
-            // 简化实现：暂时不设置投影掩码
-            // self.projection_mask = Some(ProjectionMask::roots(schema, column_indices));
+            // 设置投影掩码
+            self.projection_mask = Some(ProjectionMask::roots(schema, column_indices));
         }
         
         Ok(())
@@ -190,8 +190,20 @@ impl ParquetReader {
     }
     
     /// 判断是否应该包含RowGroup
-    fn should_include_rowgroup(&self, _rowgroup: &RowGroupMetaData) -> Result<bool> {
-        // 简化实现：总是包含所有RowGroup
+    fn should_include_rowgroup(&self, rowgroup: &RowGroupMetaData) -> Result<bool> {
+        // 根据谓词和统计信息判断是否应该包含RowGroup
+        if let Some(predicate) = &self.predicate {
+            // 检查RowGroup的统计信息是否匹配谓词
+            for column_metadata in rowgroup.columns() {
+                if let Some(statistics) = column_metadata.statistics() {
+                    // 这里应该实现具体的谓词匹配逻辑
+                    // 简化实现：检查是否有null值
+                    if statistics.null_count() > 0 && matches!(predicate, crate::io::data_lake_reader::Predicate::IsNotNull { .. }) {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
         Ok(true)
     }
     

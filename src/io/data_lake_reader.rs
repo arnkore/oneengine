@@ -860,22 +860,138 @@ impl DataLakeReader {
 
     /// 检查谓词匹配
     fn matches_predicates(&self, row_group: &RowGroupMetaData) -> Result<bool, String> {
-        // 简化实现：总是返回true
-        // 在实际实现中，这里应该检查RowGroup的统计信息是否匹配谓词条件
+        // 检查RowGroup的统计信息是否匹配谓词条件
+        if let Some(predicate) = &self.predicate {
+            for column_metadata in row_group.columns() {
+                if let Some(statistics) = column_metadata.statistics() {
+                    let matches = self.check_predicate_against_statistics(predicate, statistics)?;
+                    if !matches {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
         Ok(true)
+    }
+    
+    /// 检查谓词与统计信息的匹配
+    fn check_predicate_against_statistics(&self, predicate: &Predicate, statistics: &parquet::file::statistics::Statistics) -> Result<bool, String> {
+        match predicate {
+            Predicate::Equal { column: _, value } => {
+                match value {
+                    datafusion_common::ScalarValue::Int32(Some(val)) => {
+                        if let Some(min) = statistics.min() {
+                            if let Some(max) = statistics.max() {
+                                Ok(*val >= min && *val <= max)
+                            } else {
+                                Ok(*val >= min)
+                            }
+                        } else {
+                            Ok(true) // 没有统计信息时假设匹配
+                        }
+                    },
+                    datafusion_common::ScalarValue::Utf8(Some(val)) => {
+                        if let Some(min) = statistics.min() {
+                            if let Some(max) = statistics.max() {
+                                Ok(val >= min && val <= max)
+                            } else {
+                                Ok(val >= min)
+                            }
+                        } else {
+                            Ok(true)
+                        }
+                    },
+                    _ => Ok(true), // 其他类型暂时假设匹配
+                }
+            },
+            Predicate::GreaterThan { column: _, value } => {
+                match value {
+                    datafusion_common::ScalarValue::Int32(Some(val)) => {
+                        if let Some(max) = statistics.max() {
+                            Ok(*val < max)
+                        } else {
+                            Ok(true)
+                        }
+                    },
+                    datafusion_common::ScalarValue::Utf8(Some(val)) => {
+                        if let Some(max) = statistics.max() {
+                            Ok(val < max)
+                        } else {
+                            Ok(true)
+                        }
+                    },
+                    _ => Ok(true),
+                }
+            },
+            Predicate::LessThan { column: _, value } => {
+                match value {
+                    datafusion_common::ScalarValue::Int32(Some(val)) => {
+                        if let Some(min) = statistics.min() {
+                            Ok(*val > min)
+                        } else {
+                            Ok(true)
+                        }
+                    },
+                    datafusion_common::ScalarValue::Utf8(Some(val)) => {
+                        if let Some(min) = statistics.min() {
+                            Ok(val > min)
+                        } else {
+                            Ok(true)
+                        }
+                    },
+                    _ => Ok(true),
+                }
+            },
+            Predicate::Between { column: _, min, max } => {
+                let min_matches = self.check_predicate_against_statistics(
+                    &Predicate::GreaterThan { column: "".to_string(), value: min.clone() },
+                    statistics
+                )?;
+                let max_matches = self.check_predicate_against_statistics(
+                    &Predicate::LessThan { column: "".to_string(), value: max.clone() },
+                    statistics
+                )?;
+                Ok(min_matches && max_matches)
+            },
+            Predicate::IsNull { column: _ } => {
+                // 检查统计信息中的null_count
+                Ok(statistics.null_count() > 0)
+            },
+            Predicate::IsNotNull { column: _ } => {
+                // 检查统计信息中的null_count
+                Ok(statistics.null_count() < statistics.num_values())
+            },
+        }
     }
 
     /// 检查是否有字典列
     fn has_dictionary_columns(&self, row_group: &RowGroupMetaData) -> Result<bool, String> {
-        // 简化实现：总是返回true
-        // 在实际实现中，这里应该检查RowGroup是否包含字典编码的列
-        Ok(true)
+        // 检查RowGroup是否包含字典编码的列
+        for column_metadata in row_group.columns() {
+            if let Some(encoding) = column_metadata.encoding() {
+                if encoding == parquet::basic::Encoding::PLAIN_DICTIONARY || 
+                   encoding == parquet::basic::Encoding::RLE_DICTIONARY {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// 缓存字典信息
     fn cache_dictionary_info(&mut self, row_group: &RowGroupMetaData) -> Result<(), String> {
-        // 简化实现：不执行任何操作
-        // 在实际实现中，这里应该提取并缓存字典信息
+        // 提取并缓存字典信息
+        for (column_idx, column_metadata) in row_group.columns().iter().enumerate() {
+            if let Some(encoding) = column_metadata.encoding() {
+                if encoding == parquet::basic::Encoding::PLAIN_DICTIONARY || 
+                   encoding == parquet::basic::Encoding::RLE_DICTIONARY {
+                    
+                    // 这里应该从Parquet文件中读取字典数据
+                    // 简化实现：创建空的字典缓存
+                    self.dictionary_cache.insert(column_idx, Vec::new());
+                }
+            }
+        }
         Ok(())
     }
 
@@ -906,23 +1022,42 @@ impl DataLakeReader {
     
     /// 获取列索引
     fn get_column_index_by_name(&self, column_name: &str) -> Option<usize> {
-        // 这里应该从schema中查找列索引
-        // 简化实现：返回0
-        Some(0)
+        // 从schema中查找列索引
+        if let Some(metadata) = &self.metadata {
+            let schema = metadata.file_metadata().schema_descr();
+            schema.get_column_index_by_name(column_name)
+        } else {
+            None
+        }
     }
     
     /// 计算分桶值
     fn calculate_bucket_value(&self, statistics: &parquet::file::statistics::Statistics, bucket_count: u32) -> Result<u32, String> {
         // 根据统计信息计算分桶值
-        // 简化实现：返回0
-        Ok(0)
+        if let Some(min) = statistics.min() {
+            if let Some(max) = statistics.max() {
+                // 使用哈希函数计算分桶值
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                
+                let mut hasher = DefaultHasher::new();
+                min.hash(&mut hasher);
+                max.hash(&mut hasher);
+                let hash = hasher.finish();
+                
+                Ok((hash % bucket_count as u64) as u32)
+            } else {
+                Ok(0)
+            }
+        } else {
+            Ok(0)
+        }
     }
     
     /// 检查页索引谓词
     fn check_page_index_predicate(&self, predicate: &Predicate, statistics: &parquet::file::statistics::Statistics) -> Result<bool, String> {
         // 检查谓词是否与页索引统计信息匹配
-        // 简化实现：返回true
-        Ok(true)
+        self.check_predicate_against_statistics(predicate, statistics)
     }
 }
 

@@ -175,8 +175,8 @@ impl UnifiedMemoryManager {
         // 检查内存配额
         self.check_quota(request.size)?;
 
-        // 直接分配内存（简化实现）
-        let (ptr, size, from_pool) = self.allocate_direct(request.size, request.alignment)?;
+        // 智能内存分配策略
+        let (ptr, size, from_pool) = self.allocate_with_strategy(request.size, request.alignment)?;
 
         // 更新统计信息
         self.update_stats(size, true);
@@ -311,8 +311,51 @@ impl UnifiedMemoryManager {
         Ok(())
     }
 
-    /// 直接分配内存
-    fn allocate_direct(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+    /// 智能内存分配策略
+    fn allocate_with_strategy(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+        // 根据大小选择分配策略
+        if size <= 1024 {
+            // 小对象：优先使用内存池
+            self.allocate_small_object(size, alignment)
+        } else if size <= 1024 * 1024 {
+            // 中等对象：使用专用分配器
+            self.allocate_medium_object(size, alignment)
+        } else {
+            // 大对象：直接系统分配
+            self.allocate_large_object(size, alignment)
+        }
+    }
+    
+    /// 分配小对象
+    fn allocate_small_object(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+        // 尝试从内存池分配
+        if let Some(ptr) = self.try_pool_allocation(size, alignment) {
+            return Ok((ptr, size, true));
+        }
+        
+        // 回退到系统分配
+        self.allocate_system(size, alignment)
+    }
+    
+    /// 分配中等对象
+    fn allocate_medium_object(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+        // 尝试从专用分配器分配
+        if let Some(ptr) = self.try_medium_allocator(size, alignment) {
+            return Ok((ptr, size, true));
+        }
+        
+        // 回退到系统分配
+        self.allocate_system(size, alignment)
+    }
+    
+    /// 分配大对象
+    fn allocate_large_object(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+        // 大对象直接系统分配
+        self.allocate_system(size, alignment)
+    }
+    
+    /// 系统分配
+    fn allocate_system(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
         let layout = std::alloc::Layout::from_size_align(size, alignment)
             .map_err(|e| anyhow::anyhow!("Invalid layout: {}", e))?;
         
@@ -322,6 +365,18 @@ impl UnifiedMemoryManager {
         }
 
         Ok((ptr, size, false))
+    }
+    
+    /// 尝试中等对象分配器
+    fn try_medium_allocator(&self, size: usize, alignment: usize) -> Option<*mut u8> {
+        // 这里应该实现中等对象分配器
+        // 简化实现：返回None，回退到系统分配
+        None
+    }
+    
+    /// 直接分配内存（保留原方法用于兼容性）
+    fn allocate_direct(&self, size: usize, alignment: usize) -> Result<(*mut u8, usize, bool)> {
+        self.allocate_with_strategy(size, alignment)
     }
 
     /// 更新统计信息
