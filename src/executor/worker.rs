@@ -209,6 +209,38 @@ impl Worker {
         
         Ok(format!("custom_data_{}", task.id).into_bytes())
     }
+    
+    /// 检查是否有待处理的任务
+    pub async fn has_pending_tasks(&self) -> bool {
+        let queue = self.task_queue.read().await;
+        !queue.is_empty()
+    }
+    
+    /// 获取任务执行结果
+    pub async fn get_result(&self) -> Option<arrow::record_batch::RecordBatch> {
+        // 这里应该从结果队列中获取RecordBatch
+        // 简化实现：返回None
+        None
+    }
+    
+    /// 添加任务到队列
+    pub async fn add_task(&self, task: ExecutableTask) -> Result<()> {
+        let mut queue = self.task_queue.write().await;
+        queue.push(task);
+        Ok(())
+    }
+    
+    /// 获取当前负载
+    pub async fn get_current_load(&self) -> usize {
+        let load = self.current_load.read().await;
+        *load
+    }
+    
+    /// 设置当前负载
+    pub async fn set_current_load(&self, load: usize) {
+        let mut current_load = self.current_load.write().await;
+        *current_load = load;
+    }
 }
 
 impl Clone for Worker {

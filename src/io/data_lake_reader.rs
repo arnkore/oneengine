@@ -10,6 +10,24 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::path::Path;
 use tracing::{debug, info, warn};
+use datafusion_common::ScalarValue;
+
+/// 谓词类型
+#[derive(Debug, Clone)]
+pub enum Predicate {
+    /// 等值比较
+    Equal { column: String, value: ScalarValue },
+    /// 大于比较
+    GreaterThan { column: String, value: ScalarValue },
+    /// 小于比较
+    LessThan { column: String, value: ScalarValue },
+    /// 范围比较
+    Between { column: String, min: ScalarValue, max: ScalarValue },
+    /// 空值检查
+    IsNull { column: String },
+    /// 非空值检查
+    IsNotNull { column: String },
+}
 
 /// 数据湖读取配置
 #[derive(Debug, Clone)]
@@ -153,6 +171,30 @@ impl DataLakeReader {
             dictionary_cache: HashMap::new(),
             lazy_materialization: None,
         }
+    }
+    
+    /// 读取数据
+    pub fn read_data(&self, file_path: &str) -> Result<Vec<RecordBatch>, String> {
+        use std::fs::File;
+        use arrow::ipc::reader::FileReader;
+        
+        // 打开Parquet文件
+        let file = File::open(file_path)
+            .map_err(|e| format!("Failed to open file {}: {}", file_path, e))?;
+        
+        // 创建Arrow文件读取器
+        let reader = FileReader::try_new(file, None)
+            .map_err(|e| format!("Failed to create file reader: {}", e))?;
+        
+        let mut batches = Vec::new();
+        
+        // 读取所有批次
+        for result in reader {
+            let batch = result.map_err(|e| format!("Failed to read batch: {}", e))?;
+            batches.push(batch);
+        }
+        
+        Ok(batches)
     }
 
     /// 打开Parquet文件
@@ -346,9 +388,82 @@ impl DataLakeReader {
 
     /// 读取指定列
     fn read_columns(&self, rowgroups: &[usize], columns: &[String]) -> Result<Vec<RecordBatch>, String> {
-        // 简化实现：返回空批次
-        // 在实际实现中，这里应该使用Arrow的列式读取器
-        Ok(vec![])
+        use parquet::file::reader::{FileReader, SerializedFileReader};
+        use arrow::record_batch::RecordBatch;
+        use arrow::array::*;
+        use arrow::datatypes::*;
+        
+        let mut batches = Vec::new();
+        
+        // 打开Parquet文件
+        let file = std::fs::File::open(&self.file_path)
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let reader = SerializedFileReader::new(file)
+            .map_err(|e| format!("Failed to create reader: {}", e))?;
+        
+        // 获取文件元数据
+        let metadata = reader.metadata();
+        let schema = metadata.file_metadata().schema_descr();
+        
+        // 找到要读取的列索引
+        let mut column_indices = Vec::new();
+        for column_name in columns {
+            if let Some(index) = schema.get_column_index_by_name(column_name) {
+                column_indices.push(index);
+            }
+        }
+        
+        // 读取指定的行组
+        for &rowgroup_idx in rowgroups {
+            if rowgroup_idx >= metadata.num_row_groups() {
+                continue;
+            }
+            
+            let row_group_reader = reader.get_row_group(rowgroup_idx)
+                .map_err(|e| format!("Failed to get row group: {}", e))?;
+            
+            // 读取指定列
+            let mut column_arrays = Vec::new();
+            for &col_idx in &column_indices {
+                let column_reader = row_group_reader.get_column_reader(col_idx)
+                    .map_err(|e| format!("Failed to get column reader: {}", e))?;
+                
+                // 读取列数据
+                let mut values = Vec::new();
+                let mut def_levels = Vec::new();
+                let mut rep_levels = Vec::new();
+                
+                let mut iter = column_reader.get_int_iterator()
+                    .map_err(|e| format!("Failed to get int iterator: {}", e))?;
+                
+                while let Some(value) = iter.next() {
+                    values.push(value);
+                }
+                
+                // 创建Arrow数组
+                let array = Int32Array::from(values);
+                column_arrays.push(Arc::new(array) as ArrayRef);
+            }
+            
+            // 创建Schema
+            let fields: Vec<Field> = column_indices.iter()
+                .zip(columns.iter())
+                .map(|(&idx, name)| {
+                    let column_descr = schema.column(idx);
+                    Field::new(name, DataType::Int32, column_descr.is_nullable())
+                })
+                .collect();
+            
+            let schema = Arc::new(Schema::new(fields));
+            
+            // 创建RecordBatch
+            let batch = RecordBatch::try_new(schema, column_arrays)
+                .map_err(|e| format!("Failed to create RecordBatch: {}", e))?;
+            
+            batches.push(batch);
+        }
+        
+        Ok(batches)
     }
 
     /// 根据行号映射读取列
@@ -360,9 +475,183 @@ impl DataLakeReader {
 
     /// 应用过滤条件
     fn apply_filter_conditions(&self, batch: &RecordBatch) -> Result<Vec<usize>, String> {
-        // 简化实现：返回所有行索引
-        // 在实际实现中，这里应该根据谓词条件过滤数据
-        Ok((0..batch.num_rows()).collect())
+        use arrow::compute::kernels::cmp::{gt, lt};
+        use arrow::compute::kernels::cmp::gt as gte;
+        use arrow::compute::kernels::cmp::lt as lte;
+        use arrow::compute::kernels::cmp::eq as equal;
+        use datafusion_common::ScalarValue;
+        
+        let mut valid_rows = Vec::new();
+        
+        // 如果没有过滤条件，返回所有行
+        if self.predicate.is_none() {
+            return Ok((0..batch.num_rows()).collect());
+        }
+        
+        // 获取过滤条件
+        let predicate = self.predicate.as_ref().unwrap();
+        
+        // 根据谓词类型应用过滤
+        match predicate {
+            Predicate::Equal { column, value } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    let mask = match value {
+                        ScalarValue::Int32(Some(val)) => {
+                            if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+                                let filter_array = Int32Array::from(vec![*val; batch.num_rows()]);
+                                equal(int_array, &filter_array)
+                                    .map_err(|e| format!("Equal comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for equal comparison".to_string());
+                            }
+                        },
+                        ScalarValue::Float64(Some(val)) => {
+                            if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
+                                let filter_array = Float64Array::from(vec![*val; batch.num_rows()]);
+                                equal(float_array, &filter_array)
+                                    .map_err(|e| format!("Equal comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for equal comparison".to_string());
+                            }
+                        },
+                        _ => return Err("Unsupported value type for equal comparison".to_string()),
+                    };
+                    
+                    for (i, &is_valid) in mask.iter().enumerate() {
+                        if is_valid {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+            Predicate::GreaterThan { column, value } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    let mask = match value {
+                        ScalarValue::Int32(Some(val)) => {
+                            if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+                                let filter_array = Int32Array::from(vec![*val; batch.num_rows()]);
+                                gt(int_array, &filter_array)
+                                    .map_err(|e| format!("Greater than comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for greater than comparison".to_string());
+                            }
+                        },
+                        ScalarValue::Float64(Some(val)) => {
+                            if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
+                                let filter_array = Float64Array::from(vec![*val; batch.num_rows()]);
+                                gt(float_array, &filter_array)
+                                    .map_err(|e| format!("Greater than comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for greater than comparison".to_string());
+                            }
+                        },
+                        _ => return Err("Unsupported value type for greater than comparison".to_string()),
+                    };
+                    
+                    for (i, &is_valid) in mask.iter().enumerate() {
+                        if is_valid {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+            Predicate::LessThan { column, value } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    let mask = match value {
+                        ScalarValue::Int32(Some(val)) => {
+                            if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+                                let filter_array = Int32Array::from(vec![*val; batch.num_rows()]);
+                                lt(int_array, &filter_array)
+                                    .map_err(|e| format!("Less than comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for less than comparison".to_string());
+                            }
+                        },
+                        ScalarValue::Float64(Some(val)) => {
+                            if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
+                                let filter_array = Float64Array::from(vec![*val; batch.num_rows()]);
+                                lt(float_array, &filter_array)
+                                    .map_err(|e| format!("Less than comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for less than comparison".to_string());
+                            }
+                        },
+                        _ => return Err("Unsupported value type for less than comparison".to_string()),
+                    };
+                    
+                    for (i, &is_valid) in mask.iter().enumerate() {
+                        if is_valid {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+            Predicate::Between { column, min, max } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    
+                    // 应用最小值过滤
+                    let min_mask = match min {
+                        ScalarValue::Int32(Some(val)) => {
+                            if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+                                let filter_array = Int32Array::from(vec![*val; batch.num_rows()]);
+                                gte(int_array, &filter_array)
+                                    .map_err(|e| format!("Min comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for min comparison".to_string());
+                            }
+                        },
+                        _ => return Err("Unsupported value type for min comparison".to_string()),
+                    };
+                    
+                    // 应用最大值过滤
+                    let max_mask = match max {
+                        ScalarValue::Int32(Some(val)) => {
+                            if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+                                let filter_array = Int32Array::from(vec![*val; batch.num_rows()]);
+                                lte(int_array, &filter_array)
+                                    .map_err(|e| format!("Max comparison failed: {}", e))?
+                            } else {
+                                return Err("Column type mismatch for max comparison".to_string());
+                            }
+                        },
+                        _ => return Err("Unsupported value type for max comparison".to_string()),
+                    };
+                    
+                    // 组合两个条件
+                    for (i, (&min_valid, &max_valid)) in min_mask.iter().zip(max_mask.iter()).enumerate() {
+                        if min_valid && max_valid {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+            Predicate::IsNull { column } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    for (i, is_null) in array.nulls().iter().enumerate() {
+                        if is_null {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+            Predicate::IsNotNull { column } => {
+                if let Some(column_index) = batch.schema().column_with_name(column) {
+                    let array = batch.column(column_index.0);
+                    for (i, is_null) in array.nulls().iter().enumerate() {
+                        if !is_null {
+                            valid_rows.push(i);
+                        }
+                    }
+                }
+            },
+        }
+        
+        Ok(valid_rows)
     }
 
     /// 检查分区匹配

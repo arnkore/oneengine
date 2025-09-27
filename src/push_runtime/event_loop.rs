@@ -173,7 +173,7 @@ impl EventLoop {
     /// 处理单个事件
     fn handle_event(&mut self, event: Event) -> Result<bool> {
         match event {
-            Event::Data(port, batch) => {
+            Event::Data { port, batch } => {
                 if let Some(&op_id) = self.port_mapping.get(&port) {
                     self.handle_data_event(op_id, port, batch)
                 } else {
@@ -216,6 +216,10 @@ impl EventLoop {
                     Ok(false)
                 }
             }
+            Event::StartScan { .. } | Event::EndOfStream { .. } => {
+                // 处理扫描开始和流结束事件
+                Ok(false)
+            }
         }
     }
     
@@ -229,7 +233,7 @@ impl EventLoop {
                 &self.port_mapping,
             );
             
-            let status = operator.on_event(Event::Data(port, batch), &mut outbox);
+            let status = operator.on_event(Event::Data { port, batch }, &mut outbox);
             
             match status {
                 super::OpStatus::Blocked => {
@@ -292,6 +296,42 @@ impl EventLoop {
     /// 设置最大事件处理数
     pub fn set_max_events_per_cycle(&mut self, max: usize) {
         self.max_events_per_cycle = max;
+    }
+    
+    /// 处理单个事件（用于外部调用）
+    pub fn process_event(&mut self, event: Event) -> Result<()> {
+        self.handle_event(event)?;
+        Ok(())
+    }
+    
+    /// 检查是否完成
+    pub fn is_finished(&self) -> bool {
+        !self.running || self.all_operators_finished()
+    }
+    
+    /// 添加端口映射
+    pub fn add_port_mapping(&mut self, port: PortId, operator_id: OperatorId) {
+        self.port_mapping.insert(port, operator_id);
+    }
+    
+    /// 获取下一个待处理的事件
+    pub fn get_next_event(&mut self) -> Option<Event> {
+        self.event_queue.pop()
+    }
+    
+    /// 检查是否有待处理的事件
+    pub fn has_pending_events(&self) -> bool {
+        !self.event_queue.is_empty()
+    }
+    
+    /// 添加事件到队列
+    pub fn add_event(&mut self, event: Event) {
+        self.event_queue.push(event);
+    }
+    
+    /// 获取事件队列大小
+    pub fn event_queue_size(&self) -> usize {
+        self.event_queue.len()
     }
 }
 

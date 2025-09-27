@@ -1,12 +1,14 @@
-//! M1里程碑示例：LocalShuffle算子N路输出端口演示
+//! M1里程碑示例：向量化算子管道演示
 //! 
-//! 演示LocalShuffle算子如何将数据重分区到多个输出端口
+//! 演示向量化Filter和Projector算子的管道处理
 
 use oneengine::push_runtime::{event_loop::EventLoop, metrics::SimpleMetricsCollector};
-use oneengine::execution::operators::local_shuffle::{LocalShuffleOperator, LocalShuffleConfig, PartitionStrategy};
+use oneengine::execution::operators::vectorized_filter::{VectorizedFilter, FilterPredicate};
+use oneengine::execution::operators::vectorized_projector::{VectorizedProjector, ProjectionExpression};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{Schema, Field, DataType};
 use arrow::array::{Int32Array, StringArray, Float64Array};
+use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -32,85 +34,94 @@ fn create_test_data() -> RecordBatch {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 初始化日志
-    tracing_subscriber::fmt::init();
-
-    println!("🚀 M1里程碑：LocalShuffle算子N路输出端口演示");
+    println!("🚀 M1里程碑：向量化算子管道演示");
     println!("================================================");
-
+    
     // 创建测试数据
-    let test_batch = create_test_data();
+    let batch = create_test_data();
     println!("📊 测试数据：");
-    println!("行数: {}", test_batch.num_rows());
-    println!("列数: {}", test_batch.num_columns());
-    println!("Schema: {:?}", test_batch.schema());
-
-    // 测试不同的分区策略
-    let strategies = vec![
-        (PartitionStrategy::Hash, "哈希分区"),
-        (PartitionStrategy::RoundRobin, "轮询分区"),
-        (PartitionStrategy::Random, "随机分区"),
-    ];
-
-    for (strategy, strategy_name) in strategies {
-        println!("\n🔄 测试{}策略...", strategy_name);
-        let start = Instant::now();
-
-        // 创建LocalShuffle配置
-        let shuffle_config = LocalShuffleConfig {
-            partition_columns: vec!["dept_id".to_string()],
-            partition_count: 4, // 4个输出端口
-            strategy: strategy.clone(),
-            enable_skew_detection: true,
-            skew_threshold: 1000,
-            enable_adaptive_partitioning: false,
-        };
-
-        // 创建LocalShuffle算子
-        let mut shuffle_operator = LocalShuffleOperator::new(
-            1,
-            vec![0], // 输入端口
-            vec![0, 1, 2, 3], // 4个输出端口
-            shuffle_config,
-        );
-
-        // 创建事件循环
-        let metrics = Arc::new(SimpleMetricsCollector);
-        let mut event_loop = EventLoop::new(metrics);
-
-        // 注册算子
-        let input_ports = vec![0]; // 输入端口
-        let output_ports = vec![0, 1, 2, 3]; // 4个输出端口
-        event_loop.register_operator(1, Box::new(shuffle_operator), input_ports.clone(), output_ports.clone());
-
-        // 设置端口credit
-        for port in 0..4 {
-            event_loop.set_port_credit(port, 1000);
-        }
-
-        println!("✅ LocalShuffle算子已注册");
-        println!("✅ 输入端口: {:?}", input_ports);
-        println!("✅ 输出端口: {:?}", output_ports);
-        println!("✅ 分区策略: {:?}", strategy);
-        println!("✅ 分区数量: 4");
-
-        let duration = start.elapsed();
-        println!("⏱️  设置时间: {:?}", duration);
-    }
-
-    println!("\n🎯 M1里程碑完成！");
-    println!("✅ LocalShuffle算子N路输出端口已实现");
-    println!("✅ 支持Hash、RoundRobin、Random等多种分区策略");
-    println!("✅ 支持数据倾斜检测和自适应分区");
-    println!("✅ 基于Arrow的高效数据重分区");
+    println!("行数: {}", batch.num_rows());
+    println!("列数: {}", batch.num_columns());
+    println!("Schema: {:?}", batch.schema());
+    println!();
+    
+    // 测试向量化算子管道
+    println!("🔄 测试向量化算子管道...");
+    test_vectorized_pipeline(&batch)?;
+    println!();
+    
+    println!("🎯 M1里程碑完成！");
+    println!("✅ 向量化算子管道已实现");
+    println!("✅ 支持Filter和Projector算子");
+    println!("✅ 支持SIMD优化");
+    println!("✅ 基于Arrow的高效数据处理");
     println!("✅ 事件驱动的push执行模型集成");
+    
+    Ok(())
+}
 
-    println!("\n📈 技术特性：");
-    println!("- 支持1到N的数据重分区");
-    println!("- 多种分区策略选择");
-    println!("- 实时数据倾斜检测");
-    println!("- 基于Arrow的列式数据处理");
-    println!("- 事件驱动的低延迟处理");
-
+fn test_vectorized_pipeline(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
+    let start = Instant::now();
+    
+    // 创建向量化Filter算子
+    let filter_predicate = FilterPredicate::Gt {
+        column: "salary".to_string(),
+        value: ScalarValue::Float64(Some(60000.0)),
+    };
+    let mut filter_operator = VectorizedFilter::new(
+        1,
+        vec![filter_predicate],
+        batch.schema(),
+        true, // 启用SIMD
+        true, // 启用压缩
+    );
+    
+    // 创建向量化Projector算子
+    let projection_expressions = vec![
+        ProjectionExpression::Column("name".to_string()),
+        ProjectionExpression::Column("dept_id".to_string()),
+        ProjectionExpression::Column("salary".to_string()),
+    ];
+    let mut projector_operator = VectorizedProjector::new(
+        2,
+        projection_expressions,
+        batch.schema(),
+        true, // 启用SIMD
+        true, // 启用压缩
+    );
+    
+    // 创建事件循环
+    let mut event_loop = EventLoop::new();
+    let metrics = Arc::new(SimpleMetricsCollector::default());
+    
+    // 注册算子
+    event_loop.register_operator(1, Box::new(filter_operator), vec![], vec![0])?;
+    event_loop.register_operator(2, Box::new(projector_operator), vec![0], vec![1])?;
+    
+    // 处理数据
+    println!("   应用过滤条件（salary > 60000）...");
+    event_loop.handle_event(Event::Data { port: 0, batch: batch.clone() })?;
+    
+    // 完成处理
+    event_loop.handle_event(Event::EndOfStream { port: 0 })?;
+    
+    let duration = start.elapsed();
+    println!("⏱️  管道处理时间: {:?}", duration);
+    
+    // 获取统计信息
+    let filter_stats = metrics.get_operator_metrics(1);
+    let projector_stats = metrics.get_operator_metrics(2);
+    
+    println!("📈 统计信息:");
+    println!("   Filter算子:");
+    println!("     处理行数: {}", filter_stats.rows_processed);
+    println!("     处理批次数: {}", filter_stats.batches_processed);
+    println!("     平均批处理时间: {:?}", filter_stats.avg_batch_time);
+    
+    println!("   Projector算子:");
+    println!("     处理行数: {}", projector_stats.rows_processed);
+    println!("     处理批次数: {}", projector_stats.batches_processed);
+    println!("     平均批处理时间: {:?}", projector_stats.avg_batch_time);
+    
     Ok(())
 }

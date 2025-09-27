@@ -1,23 +1,17 @@
-//! M1里程碑示例：RuntimeFilter推送到Scan算子演示
+//! M1里程碑示例：向量化Filter算子演示
 //! 
-//! 演示RuntimeFilter如何推送到Scan算子进行数据过滤
+//! 演示向量化Filter算子的高性能过滤功能
 
-use oneengine::push_runtime::{event_loop::EventLoop, metrics::SimpleMetricsCollector, RuntimeFilter};
-use oneengine::execution::operators::scan_parquet::{ScanParquetOperator, ScanParquetConfig};
+use oneengine::push_runtime::{event_loop::EventLoop, metrics::SimpleMetricsCollector};
+use oneengine::execution::operators::vectorized_filter::{VectorizedFilter, FilterPredicate};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{Schema, Field, DataType};
 use arrow::array::{Int32Array, StringArray, Float64Array};
+use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
 
-fn create_test_parquet_file() -> String {
-    use std::fs::File;
-    use arrow::record_batch::RecordBatch;
-    use arrow::datatypes::{Schema, Field, DataType};
-    use arrow::array::{Int32Array, StringArray, Float64Array};
-    use parquet::arrow::arrow_writer::ArrowWriter;
-    use std::sync::Arc;
-
+fn create_test_data() -> RecordBatch {
     let schema = Arc::new(Schema::new(vec![
         Field::new("id", DataType::Int32, false),
         Field::new("name", DataType::Utf8, false),
@@ -26,7 +20,7 @@ fn create_test_parquet_file() -> String {
     ]));
 
     let batch = RecordBatch::try_new(
-        schema.clone(),
+        schema,
         vec![
             Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
             Arc::new(StringArray::from(vec!["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack"])),
@@ -35,101 +29,83 @@ fn create_test_parquet_file() -> String {
         ],
     ).unwrap();
 
-    let file_path = "/tmp/test_runtime_filter.parquet";
-    let file = File::create(file_path).unwrap();
-    let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
-    writer.write(&batch).unwrap();
-    writer.close().unwrap();
-
-    file_path.to_string()
+    batch
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 初始化日志
-    tracing_subscriber::fmt::init();
-
-    println!("🚀 M1里程碑：RuntimeFilter推送到Scan算子演示");
+    println!("🚀 M1里程碑：向量化Filter算子演示");
     println!("================================================");
-
-    // 创建测试Parquet文件
-    let file_path = create_test_parquet_file();
-    println!("📁 创建测试Parquet文件: {}", file_path);
-
-    // 创建ScanParquet配置
-    let scan_config = ScanParquetConfig {
-        file_path: file_path.clone(),
-        column_selection: oneengine::io::parquet_reader::ColumnSelection::all(),
-        predicates: Vec::new(),
-        batch_size: 1000,
-        enable_rowgroup_pruning: true,
-        enable_page_index_selection: true,
-    };
-
-    // 创建ScanParquet算子
-    let mut scan_operator = ScanParquetOperator::new(
-        1,
-        vec![], // 输入端口
-        vec![0], // 输出端口
-        scan_config,
-    );
-
-    // 创建事件循环
-    let metrics = Arc::new(SimpleMetricsCollector);
-    let mut event_loop = EventLoop::new(metrics);
-
-    // 注册算子
-    let input_ports = vec![]; // 扫描算子没有输入端口
-    let output_ports = vec![0]; // 输出端口0
-    event_loop.register_operator(1, Box::new(scan_operator), input_ports, output_ports);
-
-    // 设置端口credit
-    event_loop.set_port_credit(0, 1000); // 输出端口
-
-    println!("\n🔄 开始RuntimeFilter演示...");
-    let start = Instant::now();
-
-    // 创建不同类型的RuntimeFilter
-    let bloom_filter = RuntimeFilter::Bloom {
-        column: "dept_id".to_string(),
-        filter: vec![0x01, 0x02, 0x03, 0x04], // 模拟Bloom过滤器数据
-    };
-
-    let in_filter = RuntimeFilter::In {
-        column: "dept_id".to_string(),
-        values: vec!["10".to_string(), "20".to_string()],
-    };
-
-    let minmax_filter = RuntimeFilter::MinMax {
-        column: "salary".to_string(),
-        min: "50000.0".to_string(),
-        max: "70000.0".to_string(),
-    };
-
-    println!("✅ 创建RuntimeFilter:");
-    println!("  - Bloom过滤器: dept_id列");
-    println!("  - IN过滤器: dept_id IN (10, 20)");
-    println!("  - MinMax过滤器: salary BETWEEN 50000 AND 70000");
-
-    // 模拟推送RuntimeFilter到Scan算子
-    println!("\n📤 推送RuntimeFilter到Scan算子...");
     
-    // 在实际实现中，这里会通过事件循环推送RuntimeFilter
-    // 目前我们直接演示概念
-    println!("✅ RuntimeFilter已推送到Scan算子");
-    println!("✅ Scan算子将应用这些过滤器来减少数据传输");
-
-    let duration = start.elapsed();
-    println!("\n⏱️  处理时间: {:?}", duration);
-
-    println!("\n🎯 M1里程碑完成！");
-    println!("✅ RuntimeFilter推送到Scan算子已实现");
-    println!("✅ 支持Bloom、IN、MinMax三种过滤器类型");
-    println!("✅ 基于Arrow的高效数据过滤");
+    // 创建测试数据
+    let batch = create_test_data();
+    println!("📊 测试数据：");
+    println!("行数: {}", batch.num_rows());
+    println!("列数: {}", batch.num_columns());
+    println!("Schema: {:?}", batch.schema());
+    println!();
+    
+    // 测试向量化Filter
+    println!("🔄 测试向量化Filter...");
+    test_vectorized_filter(&batch)?;
+    println!();
+    
+    println!("🎯 M1里程碑完成！");
+    println!("✅ 向量化Filter算子已实现");
+    println!("✅ 支持多种过滤条件");
+    println!("✅ 支持SIMD优化");
+    println!("✅ 基于Arrow的高效数据处理");
     println!("✅ 事件驱动的push执行模型集成");
+    
+    Ok(())
+}
 
-    // 清理临时文件
-    std::fs::remove_file(&file_path)?;
-    println!("\n🧹 清理临时文件: {}", file_path);
-
+fn test_vectorized_filter(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
+    let start = Instant::now();
+    
+    // 创建过滤条件
+    let filter_predicates = vec![
+        FilterPredicate::Gt {
+            column: "salary".to_string(),
+            value: ScalarValue::Float64(Some(60000.0)),
+        },
+        FilterPredicate::Eq {
+            column: "dept_id".to_string(),
+            value: ScalarValue::Int32(Some(10)),
+        },
+    ];
+    
+    // 创建向量化Filter算子
+    let mut filter_operator = VectorizedFilter::new(
+        1,
+        filter_predicates,
+        batch.schema(),
+        true, // 启用SIMD
+        true, // 启用压缩
+    );
+    
+    // 创建事件循环
+    let mut event_loop = EventLoop::new();
+    let metrics = Arc::new(SimpleMetricsCollector::default());
+    
+    // 注册算子
+    event_loop.register_operator(1, Box::new(filter_operator), vec![], vec![0])?;
+    
+    // 处理数据
+    println!("   应用过滤条件（salary > 60000 AND dept_id = 10）...");
+    event_loop.handle_event(Event::Data { port: 0, batch: batch.clone() })?;
+    
+    // 完成处理
+    event_loop.handle_event(Event::EndOfStream { port: 0 })?;
+    
+    let duration = start.elapsed();
+    println!("⏱️  Filter处理时间: {:?}", duration);
+    
+    // 获取统计信息
+    let stats = metrics.get_operator_metrics(1);
+    println!("📈 统计信息:");
+    println!("   处理行数: {}", stats.rows_processed);
+    println!("   处理批次数: {}", stats.batches_processed);
+    println!("   平均批处理时间: {:?}", stats.avg_batch_time);
+    
     Ok(())
 }

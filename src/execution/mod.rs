@@ -4,3 +4,8 @@ pub mod driver;
 pub mod scheduler;
 pub mod pipeline;
 pub mod operators;
+pub mod jit;
+pub mod numa_pipeline;
+pub mod adaptive_batching;
+pub mod skew_handling;
+pub mod extreme_observability;

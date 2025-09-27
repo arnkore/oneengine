@@ -1,6 +1,5 @@
-pub mod memory_pool;
+//! 内存管理模块
+//! 
+//! 包含内存分配器、内存池、内存统计等功能
+
 pub mod allocator;
-pub mod unified_memory_manager;
-pub mod spill_manager;
-pub mod backpressure_controller;
-pub mod gc;

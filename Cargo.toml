@@ -38,6 +38,15 @@ arrow-row = "53.4"
 async-stream = "0.3"
 tokio-stream = "0.1"
 
+# DataFusion integration
+datafusion-common = "39.0"
+
+# JIT compilation
+cranelift = "0.100"
+cranelift-jit = "0.100"
+cranelift-module = "0.100"
+cranelift-native = "0.100"
+
 # ORC support
 orc-rs = "0.1.5"
 

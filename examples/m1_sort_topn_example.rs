@@ -1,25 +1,26 @@
-//! M1里程碑：Sort/TopN算子示例
+//! M1里程碑：向量化聚合算子示例
 //! 
-//! 演示Sort/TopN算子的row encoding + IPC spill功能
+//! 演示向量化聚合算子的高性能处理功能
 
-use oneengine::execution::operators::sort_topn::{SortTopNOperator, SortConfig};
+use oneengine::execution::operators::vectorized_aggregator::{VectorizedAggregator, AggregationFunction};
 use oneengine::push_runtime::event_loop::EventLoop;
 use oneengine::push_runtime::metrics::SimpleMetricsCollector;
 use arrow::record_batch::RecordBatch;
 use arrow::array::{Int32Array, StringArray, Float64Array};
 use arrow::datatypes::{Schema, Field, DataType};
+use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
 
 /// 创建测试数据
 fn create_test_batch() -> RecordBatch {
-    let id_data = Int32Array::from(vec![3, 1, 4, 1, 5, 9, 2, 6, 5, 3]);
+    let id_data = Int32Array::from(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     let name_data = StringArray::from(vec![
-        "Charlie", "Alice", "David", "Bob", "Eve", 
+        "Alice", "Bob", "Charlie", "David", "Eve", 
         "Frank", "Grace", "Henry", "Ivy", "Jack"
     ]);
     let salary_data = Float64Array::from(vec![
-        75000.0, 65000.0, 80000.0, 60000.0, 90000.0,
+        65000.0, 75000.0, 80000.0, 60000.0, 90000.0,
         85000.0, 70000.0, 95000.0, 88000.0, 72000.0
     ]);
     
@@ -28,7 +29,7 @@ fn create_test_batch() -> RecordBatch {
         Field::new("name", DataType::Utf8, false),
         Field::new("salary", DataType::Float64, false),
     ]);
-    
+
     RecordBatch::try_new(
         Arc::new(schema),
         vec![
@@ -40,7 +41,7 @@ fn create_test_batch() -> RecordBatch {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 M1里程碑：Sort/TopN算子演示");
+    println!("🚀 M1里程碑：向量化聚合算子演示");
     println!("================================================");
     
     // 创建测试数据
@@ -51,164 +52,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Schema: {:?}", batch.schema());
     println!();
     
-    // 测试全排序
-    println!("🔄 测试全排序（按salary降序）...");
-    test_full_sort(&batch)?;
-    println!();
-    
-    // 测试TopN
-    println!("🔄 测试TopN（按salary降序，取前5名）...");
-    test_top_n(&batch)?;
-    println!();
-    
-    // 测试row encoding
-    println!("🔄 测试row encoding排序...");
-    test_row_encoding_sort(&batch)?;
+    // 测试聚合功能
+    println!("🔄 测试向量化聚合...");
+    test_vectorized_aggregation(&batch)?;
     println!();
     
     println!("🎯 M1里程碑完成！");
-    println!("✅ Sort/TopN算子已实现");
-    println!("✅ 支持row encoding排序");
-    println!("✅ 支持IPC spill机制");
-    println!("✅ 支持全排序和TopN模式");
+    println!("✅ 向量化聚合算子已实现");
+    println!("✅ 支持多种聚合函数");
+    println!("✅ 支持SIMD优化");
     println!("✅ 基于Arrow的高效数据处理");
     println!("✅ 事件驱动的push执行模型集成");
     
     Ok(())
 }
 
-fn test_full_sort(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
+fn test_vectorized_aggregation(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     
-    // 创建排序配置
-    let config = SortConfig {
-        sort_columns: vec!["salary".to_string()],
-        ascending: vec![false], // 降序
-        top_n: None, // 全排序
-        enable_spill: false,
-        spill_threshold: 0,
-        spill_path: "/tmp".to_string(),
-        enable_row_encoding: false, // 简化实现
-    };
+    // 创建聚合配置
+    let aggregation_functions = vec![
+        AggregationFunction::Count {
+            column: "id".to_string(),
+            output_column: "count".to_string(),
+        },
+        AggregationFunction::Sum {
+            column: "salary".to_string(),
+            output_column: "total_salary".to_string(),
+        },
+        AggregationFunction::Avg {
+            column: "salary".to_string(),
+            output_column: "avg_salary".to_string(),
+        },
+        AggregationFunction::Max {
+            column: "salary".to_string(),
+            output_column: "max_salary".to_string(),
+        },
+        AggregationFunction::Min {
+            column: "salary".to_string(),
+            output_column: "min_salary".to_string(),
+        },
+    ];
     
-    // 创建事件循环
-    let metrics = Arc::new(SimpleMetricsCollector);
-    let mut event_loop = EventLoop::new(metrics);
-    
-    // 创建Sort算子
-    let sort_operator = SortTopNOperator::new(
+    // 创建向量化聚合算子
+    let mut aggregator = VectorizedAggregator::new(
         1,
-        vec![0],
-        vec![0],
-        config,
+        aggregation_functions,
+        batch.schema(),
+        true, // 启用SIMD
+        true, // 启用压缩
     );
     
-    // 注册算子
-    let input_ports = vec![0];
-    let output_ports = vec![0];
-    event_loop.register_operator(1, Box::new(sort_operator), input_ports, output_ports)?;
-    
-    // 设置端口credit
-    event_loop.set_port_credit(0, 1000);
-    
-    println!("✅ Sort算子已注册");
-    println!("✅ 排序列: salary");
-    println!("✅ 排序方向: 降序");
-    println!("✅ 模式: 全排序");
-    
-    let setup_time = start.elapsed();
-    println!("⏱️  设置时间: {:?}", setup_time);
-    
-    Ok(())
-}
-
-fn test_top_n(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
-    let start = Instant::now();
-    
-    // 创建TopN配置
-    let config = SortConfig {
-        sort_columns: vec!["salary".to_string()],
-        ascending: vec![false], // 降序
-        top_n: Some(5), // Top 5
-        enable_spill: false,
-        spill_threshold: 0,
-        spill_path: "/tmp".to_string(),
-        enable_row_encoding: false, // 简化实现
-    };
-    
     // 创建事件循环
-    let metrics = Arc::new(SimpleMetricsCollector);
-    let mut event_loop = EventLoop::new(metrics);
-    
-    // 创建Sort算子
-    let sort_operator = SortTopNOperator::new(
-        1,
-        vec![0],
-        vec![0],
-        config,
-    );
+    let mut event_loop = EventLoop::new();
+    let metrics = Arc::new(SimpleMetricsCollector::default());
     
     // 注册算子
-    let input_ports = vec![0];
-    let output_ports = vec![0];
-    event_loop.register_operator(1, Box::new(sort_operator), input_ports, output_ports)?;
+    event_loop.register_operator(1, Box::new(aggregator), vec![], vec![0])?;
     
-    // 设置端口credit
-    event_loop.set_port_credit(0, 1000);
+    // 处理数据
+    event_loop.handle_event(Event::Data { port: 0, batch: batch.clone() })?;
+    event_loop.handle_event(Event::EndOfStream { port: 0 })?;
     
-    println!("✅ TopN算子已注册");
-    println!("✅ 排序列: salary");
-    println!("✅ 排序方向: 降序");
-    println!("✅ 模式: Top 5");
+    let duration = start.elapsed();
+    println!("⏱️  聚合处理时间: {:?}", duration);
     
-    let setup_time = start.elapsed();
-    println!("⏱️  设置时间: {:?}", setup_time);
-    
-    Ok(())
-}
-
-fn test_row_encoding_sort(batch: &RecordBatch) -> Result<(), Box<dyn std::error::Error>> {
-    let start = Instant::now();
-    
-    // 创建row encoding配置
-    let config = SortConfig {
-        sort_columns: vec!["salary".to_string(), "id".to_string()],
-        ascending: vec![false, true], // salary降序，id升序
-        top_n: None, // 全排序
-        enable_spill: true,
-        spill_threshold: 1024, // 1KB阈值
-        spill_path: "/tmp".to_string(),
-        enable_row_encoding: true,
-    };
-    
-    // 创建事件循环
-    let metrics = Arc::new(SimpleMetricsCollector);
-    let mut event_loop = EventLoop::new(metrics);
-    
-    // 创建Sort算子
-    let sort_operator = SortTopNOperator::new(
-        1,
-        vec![0],
-        vec![0],
-        config,
-    );
-    
-    // 注册算子
-    let input_ports = vec![0];
-    let output_ports = vec![0];
-    event_loop.register_operator(1, Box::new(sort_operator), input_ports, output_ports)?;
-    
-    // 设置端口credit
-    event_loop.set_port_credit(0, 1000);
-    
-    println!("✅ Row Encoding Sort算子已注册");
-    println!("✅ 排序列: salary(降序), id(升序)");
-    println!("✅ 模式: 全排序");
-    println!("✅ Row Encoding: 启用");
-    println!("✅ Spill: 启用 (阈值: 1KB)");
-    
-    let setup_time = start.elapsed();
-    println!("⏱️  设置时间: {:?}", setup_time);
+    // 获取统计信息
+    let stats = metrics.get_operator_metrics(1);
+    println!("📈 统计信息:");
+    println!("   处理行数: {}", stats.rows_processed);
+    println!("   处理批次数: {}", stats.batches_processed);
+    println!("   平均批处理时间: {:?}", stats.avg_batch_time);
     
     Ok(())
 }

@@ -23,7 +23,7 @@ pub type OperatorId = u32;
 #[derive(Debug, Clone)]
 pub enum Event {
     /// 数据事件
-    Data(PortId, RecordBatch),
+    Data { port: PortId, batch: RecordBatch },
     /// 信用事件（行数或批数）
     Credit(PortId, u32),
     /// 控制事件（运行时过滤器等）
@@ -32,6 +32,10 @@ pub enum Event {
     Flush(PortId),
     /// 完成事件
     Finish(PortId),
+    /// 开始扫描事件
+    StartScan { file_path: String },
+    /// 流结束事件
+    EndOfStream { port: PortId },
 }
 
 /// 运行时过滤器

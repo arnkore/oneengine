@@ -13,6 +13,10 @@ pub mod columnar;
 pub mod execution;
 pub mod push_runtime;
 pub mod io;
+pub mod optimization;
+pub mod concurrency;
+pub mod network;
+pub mod serialization;
 
 // Re-export commonly used types
 pub use core::engine::OneEngine;

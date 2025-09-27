@@ -42,7 +42,7 @@ impl<'a> Outbox<'a> {
         self.credit_manager.consume_credit(to, batch.num_rows() as u32);
         
         // 发送数据事件
-        self.event_queue.push(Event::Data(to, batch));
+        self.event_queue.push(Event::Data { port: to, batch });
         Ok(())
     }
     
@@ -65,5 +65,15 @@ impl<'a> Outbox<'a> {
     /// 发送完成事件
     pub fn emit_finish(&mut self, to: PortId) {
         self.event_queue.push(Event::Finish(to));
+    }
+    
+    /// 发送数据（简化版本）
+    pub fn send(&mut self, to: PortId, batch: RecordBatch) {
+        self.event_queue.push(Event::Data { port: to, batch });
+    }
+    
+    /// 发送流结束事件
+    pub fn send_eos(&mut self, to: PortId) {
+        self.event_queue.push(Event::EndOfStream { port: to });
     }
 }

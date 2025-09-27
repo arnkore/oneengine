@@ -21,6 +21,7 @@ pub trait MetricsCollector: Send + Sync {
 }
 
 /// 简单的指标收集器实现
+#[derive(Default)]
 pub struct SimpleMetricsCollector;
 
 impl MetricsCollector for SimpleMetricsCollector {
