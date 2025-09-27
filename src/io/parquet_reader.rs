@@ -115,6 +115,8 @@ pub struct ParquetReader {
     metadata: Option<ParquetMetaData>,
     /// 投影掩码
     projection_mask: Option<ProjectionMask>,
+    /// 谓词
+    predicate: Option<Predicate>,
 }
 
 impl ParquetReader {
@@ -125,7 +127,13 @@ impl ParquetReader {
             config,
             metadata: None,
             projection_mask: None,
+            predicate: None,
         }
+    }
+    
+    /// 设置谓词
+    pub fn set_predicate(&mut self, predicate: Predicate) {
+        self.predicate = Some(predicate);
     }
     
     /// 打开文件并初始化
@@ -165,7 +173,7 @@ impl ParquetReader {
         
         if !column_indices.is_empty() {
             // 设置投影掩码
-            self.projection_mask = Some(ProjectionMask::roots(schema, column_indices));
+            self.projection_mask = Some(ProjectionMask::roots(schema_descr, column_indices));
         }
         
         Ok(())

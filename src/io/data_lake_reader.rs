@@ -168,6 +168,8 @@ pub struct BucketPruningInfo {
 
 /// 数据湖读取器
 pub struct DataLakeReader {
+    /// 文件路径
+    file_path: String,
     /// 配置
     config: DataLakeReaderConfig,
     /// 文件元数据
@@ -178,18 +180,27 @@ pub struct DataLakeReader {
     dictionary_cache: HashMap<String, DictionaryInfo>,
     /// 延迟物化信息
     lazy_materialization: Option<LazyMaterializationInfo>,
+    /// 谓词
+    predicate: Option<Predicate>,
 }
 
 impl DataLakeReader {
     /// 创建新的数据湖读取器
-    pub fn new(config: DataLakeReaderConfig) -> Self {
+    pub fn new(file_path: String, config: DataLakeReaderConfig) -> Self {
         Self {
+            file_path,
             config,
             metadata: None,
             page_index_cache: HashMap::new(),
             dictionary_cache: HashMap::new(),
             lazy_materialization: None,
+            predicate: None,
         }
+    }
+    
+    /// 设置谓词
+    pub fn set_predicate(&mut self, predicate: Predicate) {
+        self.predicate = Some(predicate);
     }
     
     /// 读取数据
@@ -791,7 +802,7 @@ impl DataLakeReader {
     /// 检查分桶匹配
     fn matches_bucket(&self, row_group: &RowGroupMetaData, pruning_info: &BucketPruningInfo) -> Result<bool, String> {
         // 检查分桶列的值是否匹配目标分桶
-        for (column_name, expected_bucket) in &pruning_info.bucket_values {
+        for (column_name, expected_bucket) in &pruning_info.bucket_columns {
             if let Some(column_index) = self.get_column_index_by_name(column_name) {
                 if let Some(statistics) = row_group.column(column_index).statistics() {
                     // 计算分桶值
@@ -1137,14 +1148,17 @@ mod tests {
 
     #[test]
     fn test_zone_map_pruning_info() {
+        let mut zone_maps = HashMap::new();
+        zone_maps.insert("timestamp".to_string(), ZoneMap::String {
+            min: Some("2023-01-01".to_string()),
+            max: Some("2023-12-31".to_string()),
+        });
+        
         let pruning_info = ZoneMapPruningInfo {
-            column: "timestamp".to_string(),
-            min_value: Some("2023-01-01".to_string()),
-            max_value: Some("2023-12-31".to_string()),
-            matches: true,
+            zone_maps,
         };
-        assert_eq!(pruning_info.column, "timestamp");
-        assert!(pruning_info.matches);
+        assert_eq!(pruning_info.zone_maps.len(), 1);
+        assert!(pruning_info.zone_maps.contains_key("timestamp"));
     }
 
     #[test]
