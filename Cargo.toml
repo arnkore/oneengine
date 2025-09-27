@@ -33,6 +33,10 @@ futures = "0.3"
 # Apache Arrow ecosystem
 arrow = { version = "56.0", features = ["ipc"] }
 parquet = { version = "56.0", features = ["arrow"] }
+arrow-flight = "56.0"
+arrow-row = "56.0"
+async-stream = "0.3"
+tokio-stream = "0.1"
 
 # Memory management
 bytes = "1.5"
