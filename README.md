@@ -51,6 +51,16 @@ OneEngine is a high-performance, unified native execution engine designed to ser
 - **Sort Columns**: 343μs (1 col) → 387μs (3 cols)
 - **Multiple Batches**: 35μs (1 batch) → 693μs (20 batches)
 
+#### Phase 1 - Local Shuffle Operator
+- **Shuffle Processing (100 rows)**: ~4.3μs
+- **Shuffle Processing (1k rows)**: ~19.2μs
+- **Shuffle Processing (10k rows)**: ~204μs
+- **Shuffle Processing (100k rows)**: ~2.10ms
+- **Different Partitions**: 235μs (2 parts) → 219μs (32 parts)
+- **Partition Columns**: 217μs (1 col) → 284μs (3 cols)
+- **Multiple Batches**: 19μs (1 batch) → 407μs (20 batches)
+- **Data Distribution**: 217μs (uniform) → 216μs (single key)
+
 ## Architecture
 
 ### Core Components

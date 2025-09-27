@@ -73,6 +73,10 @@ harness = false
 name = "topn_bench"
 harness = false
 
+[[bench]]
+name = "local_shuffle_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
