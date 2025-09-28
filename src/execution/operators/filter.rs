@@ -64,8 +64,6 @@ impl Default for VectorizedFilterConfig {
     }
 }
 
-// 删除FilterPredicate，直接使用统一的Expression AST
-
 /// 列式向量化过滤器
 pub struct VectorizedFilter {
     config: VectorizedFilterConfig,
@@ -140,7 +138,6 @@ impl VectorizedFilter {
     pub fn set_column_index(&mut self, index: usize) {
         self.column_index = Some(index);
     }
-
 
     /// 向量化过滤
     pub fn filter(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {

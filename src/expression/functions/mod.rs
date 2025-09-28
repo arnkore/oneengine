@@ -180,6 +180,26 @@ impl FunctionEvaluatorEngine {
         registry.register(math::ExpFunction::new());
         registry.register(math::LnFunction::new());
         
+        // 注册日期时间函数
+        registry.register(date::CurrentDateFunction::new());
+        registry.register(date::CurrentTimeFunction::new());
+        registry.register(date::CurrentTimestampFunction::new());
+        registry.register(date::DateAddFunction::new());
+        registry.register(date::DateSubFunction::new());
+        registry.register(date::DateDiffFunction::new());
+        registry.register(date::ExtractFunction::new());
+        registry.register(date::FormatDateFunction::new());
+        
+        // 注册字符串函数
+        registry.register(string::ConcatFunction::new());
+        registry.register(string::SubstringFunction::new());
+        registry.register(string::LengthFunction::new());
+        registry.register(string::UpperFunction::new());
+        registry.register(string::LowerFunction::new());
+        registry.register(string::TrimFunction::new());
+        registry.register(string::ReplaceFunction::new());
+        registry.register(string::RegexMatchFunction::new());
+        
         Self {
             registry,
             stats: FunctionStats::default(),
