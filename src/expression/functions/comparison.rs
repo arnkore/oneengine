@@ -67,14 +67,6 @@ impl FunctionEvaluator for EqualFunction {
             stats: FunctionStats::default(),
         })
     }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
-    }
 }
 
 /// 不等于函数
@@ -117,14 +109,6 @@ impl FunctionEvaluator for NotEqualFunction {
             result,
             stats: FunctionStats::default(),
         })
-    }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
     }
 }
 
@@ -169,14 +153,6 @@ impl FunctionEvaluator for LessThanFunction {
             stats: FunctionStats::default(),
         })
     }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
-    }
 }
 
 /// 小于等于函数
@@ -219,14 +195,6 @@ impl FunctionEvaluator for LessThanOrEqualFunction {
             result,
             stats: FunctionStats::default(),
         })
-    }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
     }
 }
 
@@ -271,14 +239,6 @@ impl FunctionEvaluator for GreaterThanFunction {
             stats: FunctionStats::default(),
         })
     }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
-    }
 }
 
 /// 大于等于函数
@@ -321,13 +281,5 @@ impl FunctionEvaluator for GreaterThanOrEqualFunction {
             result,
             stats: FunctionStats::default(),
         })
-    }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
     }
 }

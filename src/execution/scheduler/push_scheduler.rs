@@ -21,7 +21,7 @@ use crate::execution::pipeline::Pipeline;
 use crate::execution::scheduler::task_queue::TaskQueue;
 use crate::execution::scheduler::pipeline_manager::PipelineManager;
 use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
-use crate::execution::vectorized_driver::VectorizedDriver;
+use crate::execution::vectorized_driver::{VectorizedDriver, VectorizedScanConfig, VectorizedAggregatorConfig, OperatorConfig, OperatorType};
 use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
 use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
@@ -318,6 +318,7 @@ impl PushScheduler {
                                 operator_id,
                                 operator_type: OperatorType::Project { 
                                     expressions: vec![],
+                                    output_schema: Arc::new(Schema::empty()),
                                 },
                                 input_ports,
                                 output_ports,

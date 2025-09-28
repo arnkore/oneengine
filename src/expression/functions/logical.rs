@@ -69,14 +69,6 @@ impl FunctionEvaluator for AndFunction {
             stats: FunctionStats::default(),
         })
     }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
-    }
 }
 
 /// 逻辑或函数
@@ -122,14 +114,6 @@ impl FunctionEvaluator for OrFunction {
             stats: FunctionStats::default(),
         })
     }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
-    }
 }
 
 /// 逻辑非函数
@@ -172,13 +156,5 @@ impl FunctionEvaluator for NotFunction {
             result,
             stats: FunctionStats::default(),
         })
-    }
-    
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    fn supports_simd(&self) -> bool {
-        true
     }
 }

@@ -298,7 +298,10 @@ impl MppExecutionEngine {
             config: super::operators::mpp_operator::MppConfig {
                 batch_size: 8192,
                 memory_limit: config.memory_config.operator_memory_limit,
-                // enable_vectorization and enable_simd are not part of MppConfig
+                network_timeout: std::time::Duration::from_secs(30),
+                retry_config: super::operators::mpp_operator::RetryConfig::default(),
+                compression_enabled: true,
+                parallelism: num_cpus::get(),
             },
         };
 
@@ -379,9 +382,9 @@ impl MppExecutionEngine {
                 let config = MppAggregationConfig::default();
                 let operator = MppAggregationOperatorFactory::create_aggregation(
                     node.operator_id,
-                    group_columns.clone(),
-                    agg_functions.clone(),
                     config,
+                    Arc::new(arrow::datatypes::Schema::empty()),
+                    1024 * 1024 * 1024, // 1GB
                 )?;
                 Ok(Box::new(operator))
             }

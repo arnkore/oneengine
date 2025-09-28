@@ -27,6 +27,7 @@ use arrow::compute::SortOptions;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
+use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
 
 /// Sort column specification
 #[derive(Debug, Clone)]
@@ -410,5 +411,37 @@ impl MppSortOperatorFactory {
         };
         
         MppTopNOperator::new(operator_id, limit, sort_config)
+    }
+}
+
+impl MppOperator for MppSortOperator {
+    fn initialize(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
+    }
+
+    fn process_batch(&mut self, batch: RecordBatch, _context: &MppContext) -> Result<Vec<RecordBatch>> {
+        // Simple pass-through for now
+        Ok(vec![batch])
+    }
+
+    fn exchange_data(&mut self, _data: Vec<RecordBatch>, _target_workers: Vec<WorkerId>) -> Result<()> {
+        Ok(())
+    }
+
+    fn process_partition(&mut self, _partition_id: PartitionId, data: RecordBatch) -> Result<RecordBatch> {
+        // Simple pass-through for now
+        Ok(data)
+    }
+
+    fn finish(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
+    }
+
+    fn get_stats(&self) -> MppOperatorStats {
+        self.stats.clone()
+    }
+
+    fn recover(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
     }
 }

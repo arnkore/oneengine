@@ -23,6 +23,44 @@
 use crate::execution::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, SimpleMetricsCollector};
 use crate::execution::operators::filter::*;
 use crate::execution::operators::projector::*;
+
+/// Vectorized scan configuration
+#[derive(Debug, Clone, Default)]
+pub struct VectorizedScanConfig {
+    pub batch_size: usize,
+    pub enable_vectorization: bool,
+    pub enable_simd: bool,
+}
+
+/// Vectorized aggregator configuration
+#[derive(Debug, Clone, Default)]
+pub struct VectorizedAggregatorConfig {
+    pub group_by_columns: Vec<usize>,
+    pub aggregation_functions: Vec<String>,
+    pub output_schema: SchemaRef,
+}
+
+/// Vectorized scan operator (placeholder)
+pub struct VectorizedScanOperator {
+    config: VectorizedScanConfig,
+}
+
+impl VectorizedScanOperator {
+    pub fn new(config: VectorizedScanConfig) -> Self {
+        Self { config }
+    }
+}
+
+/// Vectorized aggregator operator (placeholder)
+pub struct VectorizedAggregator {
+    config: VectorizedAggregatorConfig,
+}
+
+impl VectorizedAggregator {
+    pub fn new(config: VectorizedAggregatorConfig) -> Self {
+        Self { config }
+    }
+}
 use crate::expression::ast::Expression;
 use crate::execution::worker::Worker;
 use arrow::array::*;
@@ -117,6 +155,8 @@ pub enum OperatorType {
 pub enum OperatorConfig {
     FilterConfig(VectorizedFilterConfig),
     ProjectorConfig(VectorizedProjectorConfig),
+    ScanConfig(VectorizedScanConfig),
+    AggregatorConfig(VectorizedAggregatorConfig),
 }
 
 /// 连接
