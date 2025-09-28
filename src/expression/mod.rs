@@ -24,6 +24,7 @@
 
 pub mod ast;
 pub mod executor;
+pub mod cache;
 
 use arrow::array::ArrayRef;
 use arrow::record_batch::RecordBatch;
@@ -35,12 +36,21 @@ use anyhow::Result;
 pub struct ExpressionEngineConfig {
     /// 批处理大小
     pub batch_size: usize,
+    /// 是否启用表达式缓存
+    pub enable_cache: bool,
+    /// 缓存最大条目数
+    pub cache_max_entries: usize,
+    /// 缓存最大内存使用量（字节）
+    pub cache_max_memory: usize,
 }
 
 impl Default for ExpressionEngineConfig {
     fn default() -> Self {
         Self {
             batch_size: 8192,
+            enable_cache: true,
+            cache_max_entries: 1000,
+            cache_max_memory: 1024 * 1024 * 1024, // 1GB
         }
     }
 }
@@ -49,22 +59,44 @@ impl Default for ExpressionEngineConfig {
 pub struct VectorizedExpressionEngine {
     config: ExpressionEngineConfig,
     executor: executor::VectorizedExecutor,
+    cache: Option<cache::ExpressionCache>,
 }
 
 impl VectorizedExpressionEngine {
     /// 创建新的表达式引擎
     pub fn new(config: ExpressionEngineConfig) -> Result<Self> {
         let executor = executor::VectorizedExecutor::new(config.clone())?;
+        let cache = if config.enable_cache {
+            Some(cache::ExpressionCache::new(config.cache_max_entries))
+        } else {
+            None
+        };
 
         Ok(Self {
             config,
             executor,
+            cache,
         })
     }
 
     /// 执行表达式
     pub fn execute(&mut self, expression: &ast::Expression, batch: &RecordBatch) -> Result<ArrayRef> {
-        self.executor.execute_interpreted(expression, batch)
+        // 如果启用缓存，先尝试从缓存获取
+        if let Some(cache) = &mut self.cache {
+            if let Some(cached_result) = cache.get(expression, batch) {
+                return Ok(cached_result);
+            }
+        }
+
+        // 执行表达式
+        let result = self.executor.execute_interpreted(expression, batch)?;
+
+        // 如果启用缓存，将结果存入缓存
+        if let Some(cache) = &mut self.cache {
+            cache.put(expression, batch, result.clone());
+        }
+
+        Ok(result)
     }
 
     /// 批量执行表达式
@@ -81,8 +113,13 @@ impl VectorizedExpressionEngine {
 
     /// 获取引擎统计信息
     pub fn get_stats(&self) -> ExpressionEngineStats {
+        let cache_stats = self.cache.as_ref().map(|c| c.get_stats()).unwrap_or_default();
         ExpressionEngineStats {
             total_executions: self.executor.get_execution_count(),
+            cache_hits: cache_stats.hit_count,
+            cache_misses: cache_stats.miss_count,
+            cache_hit_rate: cache_stats.hit_rate,
+            cache_size: cache_stats.size,
         }
     }
 }
@@ -91,4 +128,20 @@ impl VectorizedExpressionEngine {
 #[derive(Debug, Clone)]
 pub struct ExpressionEngineStats {
     pub total_executions: u64,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+    pub cache_hit_rate: f64,
+    pub cache_size: usize,
+}
+
+impl Default for ExpressionEngineStats {
+    fn default() -> Self {
+        Self {
+            total_executions: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            cache_hit_rate: 0.0,
+            cache_size: 0,
+        }
+    }
 }
