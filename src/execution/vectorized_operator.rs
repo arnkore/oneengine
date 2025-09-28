@@ -17,7 +17,6 @@
 
 
 use crate::columnar::batch::Batch;
-use crate::execution::context::ExecContext;
 use anyhow::Result;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -25,7 +24,7 @@ use std::task::{Context, Poll};
 /// Trait for vectorized operators
 pub trait Operator: Send {
     /// Prepare the operator for execution
-    fn prepare(&mut self, ctx: &ExecContext) -> Result<()>;
+    fn prepare(&mut self) -> Result<()>;
     
     /// Get the next batch of data (non-blocking)
     fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<Batch>>>;
@@ -65,7 +64,7 @@ impl BaseOperator {
 }
 
 impl Operator for BaseOperator {
-    fn prepare(&mut self, _ctx: &ExecContext) -> Result<()> {
+    fn prepare(&mut self) -> Result<()> {
         self.state = OperatorState::Running;
         Ok(())
     }

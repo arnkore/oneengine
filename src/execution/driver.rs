@@ -17,7 +17,6 @@
 
 
 use crate::push_runtime::Operator;
-use crate::execution::context::ExecContext;
 use crate::push_runtime::{Event, event_loop::EventLoop, OperatorContext, OpStatus, outbox::Outbox, PortId, OperatorId};
 use crate::push_runtime::metrics::SimpleMetricsCollector;
 use arrow::record_batch::RecordBatch;
