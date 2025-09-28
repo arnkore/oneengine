@@ -53,8 +53,8 @@ pub struct VectorizedDriverConfig {
     pub enable_prefetch: bool,
     /// 是否启用NUMA感知
     pub enable_numa_aware: bool,
-    /// 是否启用自适应批量
-    pub enable_adaptive_batching: bool,
+    // /// 是否启用自适应批量
+    // pub enable_adaptive_batching: bool, // 暂时注释掉，只在example中使用
 }
 
 impl Default for VectorizedDriverConfig {
@@ -68,7 +68,7 @@ impl Default for VectorizedDriverConfig {
             enable_compression: true,
             enable_prefetch: true,
             enable_numa_aware: true,
-            enable_adaptive_batching: true,
+            // enable_adaptive_batching: true, // 暂时注释掉，只在example中使用
         }
     }
 }

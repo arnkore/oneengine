@@ -62,7 +62,7 @@ impl OneEngine {
             enable_compression: true,
             enable_prefetch: true,
             enable_numa_aware: true,
-            enable_adaptive_batching: true,
+            // enable_adaptive_batching: true, // 暂时注释掉，只在example中使用
         };
         let vectorized_driver = Arc::new(RwLock::new(VectorizedDriver::new(vectorized_driver_config)));
 
@@ -110,7 +110,7 @@ impl OneEngine {
                 enable_compression: true,
                 enable_prefetch: true,
                 enable_numa_aware: true,
-                enable_adaptive_batching: true,
+                // enable_adaptive_batching: true, // 暂时注释掉，只在example中使用
             };
             let scheduler_driver = VectorizedDriver::new(driver_config);
             self.scheduler.set_vectorized_driver(scheduler_driver).await?;
