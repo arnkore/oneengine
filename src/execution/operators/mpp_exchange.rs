@@ -28,6 +28,7 @@ use serde::{Serialize, Deserialize};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use tracing::{debug, warn, error};
+use super::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId};
 
 /// Worker node identifier
 pub type WorkerId = String;
@@ -425,5 +426,64 @@ impl ExchangeOperatorFactory {
         };
         
         DataExchangeOperator::new(exchange_id, config, target_workers, exchange_channels)
+    }
+}
+
+/// MPP data exchange operator implementation
+impl MppOperator for DataExchangeOperator {
+    fn initialize(&mut self, context: &MppContext) -> Result<()> {
+        // Exchange channels are already set in constructor
+        Ok(())
+    }
+    
+    fn process_batch(&mut self, batch: RecordBatch, _context: &MppContext) -> Result<Vec<RecordBatch>> {
+        // For data exchange, we don't return data locally
+        // Data is sent to target workers via exchange_batch
+        Ok(vec![])
+    }
+    
+    fn exchange_data(&mut self, data: Vec<RecordBatch>, target_workers: Vec<WorkerId>) -> Result<()> {
+        // Note: This is a synchronous method, but exchange_batch is async
+        // In a real implementation, you'd need to handle this properly
+        // For now, we'll just send the data directly
+        for batch in data {
+            for worker_id in &target_workers {
+                if let Some(channel) = self.exchange_channels.get(worker_id) {
+                    channel.send(batch.clone()).map_err(|e| anyhow::anyhow!("Failed to send data: {}", e))?;
+                    self.stats.bytes_sent += batch.get_array_memory_size() as u64;
+                    self.stats.network_operations += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+    
+    fn process_partition(&mut self, _partition_id: PartitionId, _data: RecordBatch) -> Result<RecordBatch> {
+        // Data exchange doesn't process partitions locally
+        Err(anyhow::anyhow!("Data exchange operator doesn't process partitions locally"))
+    }
+    
+    fn finish(&mut self, _context: &MppContext) -> Result<()> {
+        // Exchange channels are managed by the factory
+        Ok(())
+    }
+    
+    fn get_stats(&self) -> MppOperatorStats {
+        MppOperatorStats {
+            rows_processed: self.stats.rows_sent,
+            batches_processed: self.stats.batches_sent,
+            data_exchanged: self.stats.bytes_sent,
+            network_operations: self.stats.network_operations,
+            processing_time: self.stats.processing_time,
+            network_time: self.stats.network_time,
+            retry_count: self.stats.retry_count,
+            error_count: self.stats.error_count,
+        }
+    }
+    
+    fn recover(&mut self, _context: &MppContext) -> Result<()> {
+        // Reset statistics for recovery
+        self.reset_stats();
+        Ok(())
     }
 }
