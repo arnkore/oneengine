@@ -190,36 +190,6 @@ impl VectorizedProjector {
         }
     }
 
-    /// 创建字面量数组
-    fn create_literal_array_static(value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
-        match value {
-            ScalarValue::Int32(Some(v)) => {
-                let array = Int32Array::from(vec![*v; len]);
-                Ok(Arc::new(array))
-            },
-            ScalarValue::Int64(Some(v)) => {
-                let array = Int64Array::from(vec![*v; len]);
-                Ok(Arc::new(array))
-            },
-            ScalarValue::Float32(Some(v)) => {
-                let array = Float32Array::from(vec![*v; len]);
-                Ok(Arc::new(array))
-            },
-            ScalarValue::Float64(Some(v)) => {
-                let array = Float64Array::from(vec![*v; len]);
-                Ok(Arc::new(array))
-            },
-            ScalarValue::Utf8(Some(v)) => {
-                let array = StringArray::from(vec![v.as_str(); len]);
-                Ok(Arc::new(array))
-            },
-            ScalarValue::Boolean(Some(v)) => {
-                let array = BooleanArray::from(vec![*v; len]);
-                Ok(Arc::new(array))
-            },
-            _ => Err("Unsupported literal type".to_string()),
-        }
-    }
 
     /// 向量化投影
     pub fn project(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
@@ -248,30 +218,6 @@ impl VectorizedProjector {
         Ok(result)
     }
 
-    /// 创建常量数组
-    fn create_literal_array(&self, value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
-        match value {
-            ScalarValue::Int32(Some(val)) => {
-                Ok(Arc::new(Int32Array::from(vec![*val; len])))
-            },
-            ScalarValue::Int64(Some(val)) => {
-                Ok(Arc::new(Int64Array::from(vec![*val; len])))
-            },
-            ScalarValue::Float32(Some(val)) => {
-                Ok(Arc::new(Float32Array::from(vec![*val; len])))
-            },
-            ScalarValue::Float64(Some(val)) => {
-                Ok(Arc::new(Float64Array::from(vec![*val; len])))
-            },
-            ScalarValue::Utf8(Some(val)) => {
-                Ok(Arc::new(StringArray::from(vec![val.as_str(); len])))
-            },
-            ScalarValue::Boolean(Some(val)) => {
-                Ok(Arc::new(BooleanArray::from(vec![*val; len])))
-            },
-            _ => Err(format!("Unsupported literal type: {:?}", value))
-        }
-    }
 
     /// 更新统计信息
     fn update_stats(&mut self, rows: usize, duration: std::time::Duration) {
