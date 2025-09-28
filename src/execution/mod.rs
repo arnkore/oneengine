@@ -29,3 +29,4 @@ pub mod vectorized_driver;
 pub mod pipeline;
 pub mod task;
 pub mod mpp_engine;
+pub mod integrated_engine;

@@ -34,4 +34,5 @@ pub mod expression;
 
 // Re-export commonly used types
 pub use execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
+pub use execution::integrated_engine::{IntegratedEngine, IntegratedEngineFactory, IntegratedEngineConfig, StageExecutionPlan};
 pub use utils::config::Config;
