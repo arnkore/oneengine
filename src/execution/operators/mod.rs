@@ -16,10 +16,11 @@
  */
 
 
-//! 基于Arrow的算子实现
+//! Arrow-based operator implementations
 //! 
-//! 充分利用Arrow的计算内核和数据结构
+//! Leverages Arrow compute kernels and data structures for high-performance execution
 
+// Legacy single-node operators (to be deprecated)
 pub mod filter;
 pub mod projector;
 pub mod aggregator;
@@ -33,6 +34,11 @@ pub mod window;
 pub mod topn;
 pub mod distinct;
 pub mod union;
+
+// Distributed MPP operators
+pub mod mpp_operator;
+pub mod mpp_exchange;
+pub mod mpp_aggregator;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
