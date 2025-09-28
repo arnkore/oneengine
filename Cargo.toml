@@ -31,10 +31,10 @@ parking_lot = "0.12"
 futures = "0.3"
 
 # Apache Arrow ecosystem
-arrow = { version = "53.4", features = ["ipc"] }
-parquet = { version = "53.4", features = ["arrow"] }
-arrow-flight = "53.4"
-arrow-row = "53.4"
+arrow = { version = "52.2", features = ["ipc"] }
+parquet = { version = "52.2", features = ["arrow"] }
+arrow-flight = "52.2"
+arrow-row = "52.2"
 async-stream = "0.3"
 tokio-stream = "0.1"
 

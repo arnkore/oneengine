@@ -252,7 +252,7 @@ impl FunctionEvaluator for ExtractFunction {
         let mut result_values = Vec::with_capacity(part_array.len());
         
         // Process based on the type of second argument
-        if let Ok(date_array) = context.args[1].as_any().downcast_ref::<Date32Array>() {
+        if let Some(date_array) = context.args[1].as_any().downcast_ref::<Date32Array>() {
             for i in 0..part_array.len() {
                 if part_array.is_null(i) || date_array.is_null(i) {
                     result_values.push(None);

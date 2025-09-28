@@ -170,9 +170,10 @@ impl MppUnionOperator {
             }
         }
         
+        let rows = batch.num_rows() as u64;
         self.left_data.push(batch);
         self.memory_usage += batch_size;
-        self.union_stats.left_rows_processed += batch.num_rows() as u64;
+        self.union_stats.left_rows_processed += rows;
         self.union_stats.left_batches_processed += 1;
         
         Ok(())
@@ -191,9 +192,10 @@ impl MppUnionOperator {
             }
         }
         
+        let rows = batch.num_rows() as u64;
         self.right_data.push(batch);
         self.memory_usage += batch_size;
-        self.union_stats.right_rows_processed += batch.num_rows() as u64;
+        self.union_stats.right_rows_processed += rows;
         self.union_stats.right_batches_processed += 1;
         
         Ok(())
@@ -529,6 +531,7 @@ impl MppOperator for MppUnionOperator {
     }
     
     fn process_partition(&mut self, _partition_id: PartitionId, data: RecordBatch) -> Result<RecordBatch> {
+        let schema = data.schema();
         self.add_left_batch(data)?;
         let results = self.process_union()?;
         

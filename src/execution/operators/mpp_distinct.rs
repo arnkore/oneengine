@@ -382,6 +382,7 @@ impl MppOperator for MppDistinctOperator {
     }
     
     fn process_partition(&mut self, _partition_id: PartitionId, data: RecordBatch) -> Result<RecordBatch> {
+        let schema = data.schema();
         self.add_batch(data)?;
         
         if self.config.use_hash_distinct {

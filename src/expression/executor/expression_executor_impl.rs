@@ -599,6 +599,10 @@ impl ExpressionExecutorImpl {
             Expression::Aggregate(agg_expr) => {
                 Self::execute_aggregate(agg_expr, batch)
             }
+            _ => {
+                // TODO: Implement other expression types
+                Err(anyhow::anyhow!("Expression type not implemented"))
+            }
         }
     }
 }

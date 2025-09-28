@@ -56,6 +56,8 @@ pub struct FunctionStats {
 pub struct FunctionResult {
     /// Result array
     pub result: ArrayRef,
+    /// Function execution statistics
+    pub stats: FunctionStats,
 }
 
 /// Function arity
@@ -63,6 +65,8 @@ pub struct FunctionResult {
 pub enum FunctionArity {
     /// Exact number of arguments
     Exact(usize),
+    /// Fixed number of arguments (alias for Exact)
+    Fixed(usize),
     /// Variable number of arguments
     Variadic,
     /// Range of arguments (min, max)

@@ -212,7 +212,7 @@ impl Literal {
             arrow::datatypes::DataType::Map(field, sorted) => ArrowDataType::Map(field, sorted),
             arrow::datatypes::DataType::Union(fields, mode) => ArrowDataType::Union(fields, mode),
             arrow::datatypes::DataType::Dictionary(key_type, value_type) => ArrowDataType::Dictionary(key_type, value_type),
-            arrow::datatypes::DataType::Decimal(precision, scale) => ArrowDataType::Decimal(precision, scale),
+            // arrow::datatypes::DataType::Decimal(precision, scale) => ArrowDataType::Decimal(precision, scale),
             arrow::datatypes::DataType::FixedSizeBinary(size) => ArrowDataType::FixedSizeBinary(size),
             arrow::datatypes::DataType::FixedSizeList(field, size) => ArrowDataType::FixedSizeList(field, size),
             arrow::datatypes::DataType::RunEndEncoded(run_ends_type, values_type) => ArrowDataType::RunEndEncoded(run_ends_type, values_type),

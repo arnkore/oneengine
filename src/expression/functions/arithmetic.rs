@@ -56,7 +56,7 @@ impl FunctionEvaluator for AddFunction {
         }
         
         // 返回两个参数中精度更高的类型
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Int32, DataType::Int32) => Ok(DataType::Int32),
             (DataType::Int64, DataType::Int64) => Ok(DataType::Int64),
             (DataType::Float32, DataType::Float32) => Ok(DataType::Float32),
@@ -159,7 +159,7 @@ impl FunctionEvaluator for SubtractFunction {
             return Err(anyhow::anyhow!("Subtract function requires exactly 2 arguments"));
         }
         
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Int32, DataType::Int32) => Ok(DataType::Int32),
             (DataType::Int64, DataType::Int64) => Ok(DataType::Int64),
             (DataType::Float32, DataType::Float32) => Ok(DataType::Float32),
@@ -262,7 +262,7 @@ impl FunctionEvaluator for MultiplyFunction {
             return Err(anyhow::anyhow!("Multiply function requires exactly 2 arguments"));
         }
         
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Int32, DataType::Int32) => Ok(DataType::Int32),
             (DataType::Int64, DataType::Int64) => Ok(DataType::Int64),
             (DataType::Float32, DataType::Float32) => Ok(DataType::Float32),
@@ -365,7 +365,7 @@ impl FunctionEvaluator for DivideFunction {
             return Err(anyhow::anyhow!("Divide function requires exactly 2 arguments"));
         }
         
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Int32, DataType::Int32) => Ok(DataType::Int32),
             (DataType::Int64, DataType::Int64) => Ok(DataType::Int64),
             (DataType::Float32, DataType::Float32) => Ok(DataType::Float32),
@@ -468,7 +468,7 @@ impl FunctionEvaluator for ModuloFunction {
             return Err(anyhow::anyhow!("Modulo function requires exactly 2 arguments"));
         }
         
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Int32, DataType::Int32) => Ok(DataType::Int32),
             (DataType::Int64, DataType::Int64) => Ok(DataType::Int64),
             _ => Err(anyhow::anyhow!("Modulo operation only supported for integer types")),
@@ -545,7 +545,7 @@ impl FunctionEvaluator for PowerFunction {
             return Err(anyhow::anyhow!("Power function requires exactly 2 arguments"));
         }
         
-        match (arg_types[0], &arg_types[1]) {
+        match (arg_types[0].clone(), &arg_types[1]) {
             (DataType::Float32, DataType::Float32) => Ok(DataType::Float32),
             (DataType::Float64, DataType::Float64) => Ok(DataType::Float64),
             _ => Ok(DataType::Float64), // 默认返回Float64

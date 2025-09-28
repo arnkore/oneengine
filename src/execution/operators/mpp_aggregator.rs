@@ -239,6 +239,10 @@ impl AggregationState {
                     None
                 }
             }
+            _ => {
+                // TODO: Implement other aggregation functions
+                None
+            }
         }
     }
 }

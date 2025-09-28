@@ -158,9 +158,10 @@ impl MppSortOperator {
             }
         }
         
+        let rows = batch.num_rows() as u64;
         self.buffered_data.push(batch);
         self.memory_usage += batch_size;
-        self.stats.rows_processed += batch.num_rows() as u64;
+        self.stats.rows_processed += rows;
         self.stats.batches_processed += 1;
         
         Ok(())
@@ -230,7 +231,7 @@ impl MppSortOperator {
     }
     
     /// Merge multiple sorted batches
-    fn merge_sorted_batches(&self, mut sorted_batches: Vec<RecordBatch>) -> Result<Vec<RecordBatch>> {
+    fn merge_sorted_batches(&mut self, mut sorted_batches: Vec<RecordBatch>) -> Result<Vec<RecordBatch>> {
         let start = std::time::Instant::now();
         
         // Simple merge: concatenate and sort again
@@ -317,8 +318,9 @@ impl MppTopNOperator {
     
     /// Add batch for top-N processing
     pub fn add_batch(&mut self, batch: RecordBatch) -> Result<()> {
+        let rows = batch.num_rows() as u64;
         self.buffered_data.push(batch);
-        self.stats.rows_processed += batch.num_rows() as u64;
+        self.stats.rows_processed += rows;
         self.stats.batches_processed += 1;
         Ok(())
     }

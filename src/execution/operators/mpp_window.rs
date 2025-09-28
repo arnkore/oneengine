@@ -254,9 +254,10 @@ impl MppWindowOperator {
             }
         }
         
+        let rows = batch.num_rows() as u64;
         self.buffered_data.push(batch);
         self.memory_usage += batch_size;
-        self.window_stats.rows_processed += batch.num_rows() as u64;
+        self.window_stats.rows_processed += rows;
         self.window_stats.batches_processed += 1;
         
         Ok(())

@@ -168,7 +168,7 @@ impl ExpressionCache {
 }
 
 /// 缓存统计信息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CacheStats {
     pub size: usize,
     pub hit_count: u64,

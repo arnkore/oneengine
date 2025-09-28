@@ -54,7 +54,7 @@ impl FunctionEvaluator for ConcatFunction {
             let mut has_null = false;
             
             for arg in &context.args {
-                if let Ok(string_array) = arg.as_any().downcast_ref::<StringArray>() {
+                if let Some(string_array) = arg.as_any().downcast_ref::<StringArray>() {
                     if string_array.is_null(row_idx) {
                         has_null = true;
                         break;

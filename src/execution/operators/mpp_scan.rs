@@ -416,7 +416,7 @@ impl MppScanOperatorFactory {
     ) -> Result<MppScanOperator> {
         let mut lake_config = config.lake_reader_config.clone();
         lake_config.format = LakeFormat::Iceberg;
-        lake_config.table_path = table_path;
+        lake_config.table_path = table_path.clone();
         
         let mut scan_config = config;
         scan_config.lake_reader_config = lake_config;
@@ -435,7 +435,7 @@ impl MppScanOperatorFactory {
     ) -> Result<MppScanOperator> {
         let mut lake_config = config.lake_reader_config.clone();
         lake_config.format = LakeFormat::Parquet;
-        lake_config.table_path = table_path;
+        lake_config.table_path = table_path.clone();
         
         let mut scan_config = config;
         scan_config.lake_reader_config = lake_config;
@@ -454,7 +454,7 @@ impl MppScanOperatorFactory {
     ) -> Result<MppScanOperator> {
         let mut lake_config = config.lake_reader_config.clone();
         lake_config.format = LakeFormat::Orc;
-        lake_config.table_path = table_path;
+        lake_config.table_path = table_path.clone();
         
         let mut scan_config = config;
         scan_config.lake_reader_config = lake_config;
