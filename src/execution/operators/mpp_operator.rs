@@ -154,15 +154,16 @@ impl MppOperatorFactory {
     }
     
     /// Create scan operator
-    pub fn create_scan(partition_id: PartitionId, data_source: Box<dyn crate::execution::operators::mpp_scan::MppDataSource>) -> Box<dyn MppOperator> {
-        use crate::execution::operators::mpp_scan::{MppScanOperator, MppScanConfig};
+    pub fn create_scan(partition_id: PartitionId, table_path: String) -> Box<dyn MppOperator> {
+        use crate::execution::operators::mpp_scan::{MppScanOperator, MppScanConfig, MppScanOperatorFactory};
         let config = MppScanConfig::default();
-        Box::new(MppScanOperator::new(
+        let operator = MppScanOperatorFactory::create_iceberg_scan(
             Uuid::new_v4(),
             partition_id,
-            data_source,
+            table_path,
             config,
-        ))
+        ).unwrap();
+        Box::new(operator)
     }
     
     /// Create hash join operator
