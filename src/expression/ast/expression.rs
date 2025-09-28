@@ -20,6 +20,7 @@
 //! 提供完整的表达式抽象语法树表示
 
 use crate::expression::ast::types::DataType;
+use datafusion_common::ScalarValue;
 use std::fmt;
 
 /// 表达式AST节点
@@ -58,7 +59,7 @@ impl Expression {
     pub fn get_type(&self) -> DataType {
         match self {
             Expression::Column(col) => col.data_type.clone(),
-            Expression::Literal(lit) => lit.data_type.clone(),
+            Expression::Literal(lit) => lit.data_type(),
             Expression::Arithmetic(expr) => expr.get_type(),
             Expression::Comparison(expr) => DataType::Boolean,
             Expression::Logical(expr) => DataType::Boolean,
@@ -171,91 +172,22 @@ impl fmt::Display for ColumnRef {
     }
 }
 
-/// 字面量
+/// 字面量 - 使用DataFusion的ScalarValue
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Literal {
-    pub value: LiteralValue,
-    pub data_type: DataType,
+    pub value: ScalarValue,
+}
+
+impl Literal {
+    /// 获取字面量的数据类型
+    pub fn data_type(&self) -> DataType {
+        self.value.data_type()
+    }
 }
 
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
-    }
-}
-
-/// 字面量值
-#[derive(Debug, Clone, PartialEq)]
-pub enum LiteralValue {
-    Null,
-    Boolean(bool),
-    Int8(i8),
-    Int16(i16),
-    Int32(i32),
-    Int64(i64),
-    UInt8(u8),
-    UInt16(u16),
-    UInt32(u32),
-    UInt64(u64),
-    Float32(f32),
-    Float64(f64),
-    String(String),
-    Binary(Vec<u8>),
-    Date(i32),
-    Time(i64),
-    Timestamp(i64),
-    Interval(i64),
-}
-
-impl std::hash::Hash for LiteralValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            LiteralValue::Null => 0.hash(state),
-            LiteralValue::Boolean(b) => b.hash(state),
-            LiteralValue::Int8(i) => i.hash(state),
-            LiteralValue::Int16(i) => i.hash(state),
-            LiteralValue::Int32(i) => i.hash(state),
-            LiteralValue::Int64(i) => i.hash(state),
-            LiteralValue::UInt8(i) => i.hash(state),
-            LiteralValue::UInt16(i) => i.hash(state),
-            LiteralValue::UInt32(i) => i.hash(state),
-            LiteralValue::UInt64(i) => i.hash(state),
-            LiteralValue::Float32(f) => f.to_bits().hash(state),
-            LiteralValue::Float64(f) => f.to_bits().hash(state),
-            LiteralValue::String(s) => s.hash(state),
-            LiteralValue::Binary(b) => b.hash(state),
-            LiteralValue::Date(d) => d.hash(state),
-            LiteralValue::Time(t) => t.hash(state),
-            LiteralValue::Timestamp(t) => t.hash(state),
-            LiteralValue::Interval(i) => i.hash(state),
-        }
-    }
-}
-
-impl std::cmp::Eq for LiteralValue {}
-
-impl fmt::Display for LiteralValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LiteralValue::Null => write!(f, "NULL"),
-            LiteralValue::Boolean(b) => write!(f, "{}", b),
-            LiteralValue::Int8(i) => write!(f, "{}", i),
-            LiteralValue::Int16(i) => write!(f, "{}", i),
-            LiteralValue::Int32(i) => write!(f, "{}", i),
-            LiteralValue::Int64(i) => write!(f, "{}", i),
-            LiteralValue::UInt8(i) => write!(f, "{}", i),
-            LiteralValue::UInt16(i) => write!(f, "{}", i),
-            LiteralValue::UInt32(i) => write!(f, "{}", i),
-            LiteralValue::UInt64(i) => write!(f, "{}", i),
-            LiteralValue::Float32(val) => write!(f, "{}", val),
-            LiteralValue::Float64(val) => write!(f, "{}", val),
-            LiteralValue::String(s) => write!(f, "'{}'", s),
-            LiteralValue::Binary(b) => write!(f, "0x{}", hex::encode(b)),
-            LiteralValue::Date(d) => write!(f, "DATE '{}'", d),
-            LiteralValue::Time(t) => write!(f, "TIME '{}'", t),
-            LiteralValue::Timestamp(t) => write!(f, "TIMESTAMP '{}'", t),
-            LiteralValue::Interval(i) => write!(f, "INTERVAL '{}'", i),
-        }
     }
 }
 

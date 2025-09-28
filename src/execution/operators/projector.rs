@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::{Expression, ColumnRef, Literal, LiteralValue, DataType as ExprDataType, ArithmeticExpr, ArithmeticOp, FunctionCall, CastExpr};
+use crate::expression::ast::{Expression, ColumnRef, Literal, ArithmeticExpr, ArithmeticOp as ExprArithmeticOp, FunctionCall, CastExpr};
 use datafusion_common::ScalarValue;
 use anyhow::Result;
 
@@ -193,31 +193,30 @@ impl VectorizedProjector {
     /// 将ProjectionExpression转换为Expression
     fn convert_projection_to_expression(&self, projection: &ProjectionExpression, input_schema: &Schema) -> Result<Expression> {
         match projection {
-            ProjectionExpression::Column { name, alias } => {
+            ProjectionExpression::Column { name, index } => {
                 let column_index = input_schema.fields.iter().position(|f| f.name() == name)
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", name))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Column(ColumnRef {
-                    name: alias.clone().unwrap_or_else(|| name.clone()),
+                    name: name.clone(),
                     index: column_index,
                     data_type,
                 }))
             }
-            ProjectionExpression::Literal { value, data_type, alias } => {
+            ProjectionExpression::Literal { value } => {
                 Ok(Expression::Literal(Literal {
-                    value: self.scalar_value_to_literal_value(value)?,
-                    data_type: self.convert_arrow_to_expr_data_type(data_type),
+                    value: value.clone(),
                 }))
             }
-            ProjectionExpression::Arithmetic { left, op, right, alias } => {
+            ProjectionExpression::Arithmetic { left, op, right } => {
                 Ok(Expression::Arithmetic(ArithmeticExpr {
                     left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
                     op: self.convert_arithmetic_op(op),
                     right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
                 }))
             }
-            ProjectionExpression::Function { name, args, return_type, alias } => {
+            ProjectionExpression::Function { name, args } => {
                 let converted_args = args.iter()
                     .map(|arg| self.convert_projection_to_expression(arg, input_schema))
                     .collect::<Result<Vec<_>>>()?;
@@ -225,10 +224,12 @@ impl VectorizedProjector {
                 Ok(Expression::Function(FunctionCall {
                     name: name.clone(),
                     args: converted_args,
-                    return_type: return_type.clone(),
+                    return_type: DataType::Utf8, // 默认返回类型
+                    is_aggregate: false,
+                    is_window: false,
                 }))
             }
-            ProjectionExpression::Cast { expr, target_type, alias } => {
+            ProjectionExpression::Cast { expr, target_type } => {
                 Ok(Expression::Cast(CastExpr {
                     expr: Box::new(self.convert_projection_to_expression(expr, input_schema)?),
                     target_type: target_type.clone(),
@@ -238,64 +239,17 @@ impl VectorizedProjector {
     }
 
     /// 转换算术操作符
-    fn convert_arithmetic_op(&self, op: &ArithmeticOp) -> ArithmeticOp {
+    fn convert_arithmetic_op(&self, op: &ArithmeticOp) -> ExprArithmeticOp {
         match op {
-            ArithmeticOp::Add => ArithmeticOp::Add,
-            ArithmeticOp::Subtract => ArithmeticOp::Subtract,
-            ArithmeticOp::Multiply => ArithmeticOp::Multiply,
-            ArithmeticOp::Divide => ArithmeticOp::Divide,
-            ArithmeticOp::Modulo => ArithmeticOp::Modulo,
-            ArithmeticOp::Power => ArithmeticOp::Power,
+            ArithmeticOp::Add => ExprArithmeticOp::Add,
+            ArithmeticOp::Subtract => ExprArithmeticOp::Subtract,
+            ArithmeticOp::Multiply => ExprArithmeticOp::Multiply,
+            ArithmeticOp::Divide => ExprArithmeticOp::Divide,
+            ArithmeticOp::Modulo => ExprArithmeticOp::Modulo,
+            ArithmeticOp::Power => ExprArithmeticOp::Power,
         }
     }
 
-    /// 将Arrow DataType转换为表达式DataType
-    fn convert_arrow_to_expr_data_type(&self, data_type: &DataType) -> ExprDataType {
-        match data_type {
-            DataType::Boolean => ExprDataType::Boolean,
-            DataType::Int8 => ExprDataType::Int8,
-            DataType::Int16 => ExprDataType::Int16,
-            DataType::Int32 => ExprDataType::Int32,
-            DataType::Int64 => ExprDataType::Int64,
-            DataType::UInt8 => ExprDataType::UInt8,
-            DataType::UInt16 => ExprDataType::UInt16,
-            DataType::UInt32 => ExprDataType::UInt32,
-            DataType::UInt64 => ExprDataType::UInt64,
-            DataType::Float32 => ExprDataType::Float32,
-            DataType::Float64 => ExprDataType::Float64,
-            DataType::Utf8 => ExprDataType::String,
-            DataType::LargeUtf8 => ExprDataType::String,
-            DataType::Binary => ExprDataType::Binary,
-            DataType::LargeBinary => ExprDataType::Binary,
-            DataType::Date32 => ExprDataType::Date,
-            DataType::Time64(TimeUnit::Microsecond) => ExprDataType::Time,
-            DataType::Timestamp(_, _) => ExprDataType::Timestamp,
-            DataType::Interval(IntervalUnit::DayTime) => ExprDataType::Interval,
-            _ => ExprDataType::String, // 默认值
-        }
-    }
-
-    /// 将ScalarValue转换为LiteralValue
-    fn scalar_value_to_literal_value(&self, value: &ScalarValue) -> Result<LiteralValue> {
-        match value {
-            ScalarValue::Boolean(Some(v)) => Ok(LiteralValue::Boolean(*v)),
-            ScalarValue::Int8(Some(v)) => Ok(LiteralValue::Int8(*v)),
-            ScalarValue::Int16(Some(v)) => Ok(LiteralValue::Int16(*v)),
-            ScalarValue::Int32(Some(v)) => Ok(LiteralValue::Int32(*v)),
-            ScalarValue::Int64(Some(v)) => Ok(LiteralValue::Int64(*v)),
-            ScalarValue::UInt8(Some(v)) => Ok(LiteralValue::UInt8(*v)),
-            ScalarValue::UInt16(Some(v)) => Ok(LiteralValue::UInt16(*v)),
-            ScalarValue::UInt32(Some(v)) => Ok(LiteralValue::UInt32(*v)),
-            ScalarValue::UInt64(Some(v)) => Ok(LiteralValue::UInt64(*v)),
-            ScalarValue::Float32(Some(v)) => Ok(LiteralValue::Float32(*v)),
-            ScalarValue::Float64(Some(v)) => Ok(LiteralValue::Float64(*v)),
-            ScalarValue::Utf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
-            ScalarValue::LargeUtf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
-            ScalarValue::Binary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
-            ScalarValue::LargeBinary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
-            _ => Err(anyhow::anyhow!("Unsupported scalar value type: {:?}", value)),
-        }
-    }
 
     /// 创建字面量数组
     fn create_literal_array_static(value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
@@ -1116,7 +1070,7 @@ impl BatchProjectorProcessor {
     }
 
     /// 添加投影器
-    pub fn add_projector(&mut self, expressions: Vec<ProjectionExpression>, output_schema: SchemaRef) {
+    pub fn add_projector(&mut self, expressions: Vec<ProjectionExpression>, output_schema: SchemaRef) -> Result<()> {
         let projector = VectorizedProjector::new(
             self.config.clone(), 
             expressions, 
@@ -1127,6 +1081,7 @@ impl BatchProjectorProcessor {
             "projector".to_string() // name
         );
         self.projectors.push(projector?);
+        Ok(())
     }
 
     /// 批量投影

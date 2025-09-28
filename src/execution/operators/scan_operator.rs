@@ -28,7 +28,7 @@ use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::datalake::unified_lake_reader::*;
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::{Expression, ColumnRef, Literal, LiteralValue, DataType as ExprDataType, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp};
+use crate::expression::ast::{Expression, ColumnRef, Literal, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp};
 use anyhow::Result;
 
 /// 向量化扫描算子配置
@@ -222,7 +222,7 @@ impl VectorizedScanOperator {
         self.current_batch_index += 1;
         
         // 应用过滤谓词
-        let filtered_batch = self.apply_predicate(batch)
+        let filtered_batch = self.apply_predicate(&batch)
             .map_err(|e| format!("Failed to apply predicate: {}", e))?;
         
         let duration = start.elapsed();

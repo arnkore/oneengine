@@ -32,8 +32,18 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::{Expression, ColumnRef, Literal, LiteralValue, DataType as ExprDataType, AggregateExpr, AggregateOp, FunctionCall};
+use crate::expression::ast::{Expression, ColumnRef, Literal, AggregateExpr, FunctionCall};
 use anyhow::Result;
+
+/// 聚合操作符
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AggregateOp {
+    Sum,
+    Count,
+    Avg,
+    Min,
+    Max,
+}
 
 /// 列式向量化聚合器配置
 #[derive(Debug, Clone)]
@@ -315,108 +325,96 @@ impl VectorizedAggregator {
         })
     }
 
-    /// 将Arrow DataType转换为表达式DataType
-    fn convert_arrow_to_expr_data_type(&self, data_type: &DataType) -> ExprDataType {
-        match data_type {
-            DataType::Boolean => ExprDataType::Boolean,
-            DataType::Int8 => ExprDataType::Int8,
-            DataType::Int16 => ExprDataType::Int16,
-            DataType::Int32 => ExprDataType::Int32,
-            DataType::Int64 => ExprDataType::Int64,
-            DataType::UInt8 => ExprDataType::UInt8,
-            DataType::UInt16 => ExprDataType::UInt16,
-            DataType::UInt32 => ExprDataType::UInt32,
-            DataType::UInt64 => ExprDataType::UInt64,
-            DataType::Float32 => ExprDataType::Float32,
-            DataType::Float64 => ExprDataType::Float64,
-            DataType::Utf8 => ExprDataType::String,
-            DataType::LargeUtf8 => ExprDataType::String,
-            DataType::Binary => ExprDataType::Binary,
-            DataType::LargeBinary => ExprDataType::Binary,
-            DataType::Date32 => ExprDataType::Date,
-            DataType::Time64(TimeUnit::Microsecond) => ExprDataType::Time,
-            DataType::Timestamp(_, _) => ExprDataType::Timestamp,
-            DataType::Interval(IntervalUnit::DayTime) => ExprDataType::Interval,
-            _ => ExprDataType::String, // 默认值
+
+    /// 转换聚合操作符到函数
+    fn convert_agg_op_to_func(&self, op: AggregateOp) -> String {
+        match op {
+            AggregateOp::Sum => "SUM".to_string(),
+            AggregateOp::Count => "COUNT".to_string(),
+            AggregateOp::Avg => "AVG".to_string(),
+            AggregateOp::Min => "MIN".to_string(),
+            AggregateOp::Max => "MAX".to_string(),
         }
     }
 
     /// 将AggregationFunction转换为Expression
     fn convert_aggregation_to_expression(&self, agg_func: &AggregationFunction, input_schema: &Schema) -> Result<Expression> {
         match agg_func {
-            AggregationFunction::Sum { column } => {
+            AggregationFunction::Sum { column, output_column } => {
                 let column_index = input_schema.fields.iter().position(|f| f.name() == column)
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
-                    op: AggregateOp::Sum,
+                    func: self.convert_agg_op_to_func(AggregateOp::Sum),
                     expr: Box::new(Expression::Column(ColumnRef {
                         name: column.clone(),
                         index: column_index,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        data_type: data_type,
                     })),
-                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    return_type: data_type,
+                    distinct: false,
                 }))
             }
-            AggregationFunction::Count { column } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
-                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
-                let data_type = input_schema.field(column_index).data_type().clone();
+            AggregationFunction::Count { output_column } => {
+                // Count不需要列，返回Int64类型
+                let data_type = DataType::Int64;
                 
                 Ok(Expression::Aggregate(AggregateExpr {
-                    op: AggregateOp::Count,
-                    expr: Box::new(Expression::Column(ColumnRef {
-                        name: column.clone(),
-                        index: column_index,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    func: self.convert_agg_op_to_func(AggregateOp::Count),
+                    expr: Box::new(Expression::Literal(Literal {
+                        value: ScalarValue::Int64(Some(1)),
                     })),
-                    return_type: ExprDataType::Int64,
+                    return_type: data_type,
+                    distinct: false,
                 }))
             }
-            AggregationFunction::Avg { column } => {
+            AggregationFunction::Avg { column, output_column } => {
                 let column_index = input_schema.fields.iter().position(|f| f.name() == column)
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
-                    op: AggregateOp::Avg,
+                    func: self.convert_agg_op_to_func(AggregateOp::Avg),
                     expr: Box::new(Expression::Column(ColumnRef {
                         name: column.clone(),
                         index: column_index,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        data_type: data_type,
                     })),
-                    return_type: ExprDataType::Float64,
+                    return_type: DataType::Float64,
+                    distinct: false,
                 }))
             }
-            AggregationFunction::Min { column } => {
+            AggregationFunction::Min { column, output_column } => {
                 let column_index = input_schema.fields.iter().position(|f| f.name() == column)
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
-                    op: AggregateOp::Min,
+                    func: self.convert_agg_op_to_func(AggregateOp::Min),
                     expr: Box::new(Expression::Column(ColumnRef {
                         name: column.clone(),
                         index: column_index,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        data_type: data_type,
                     })),
-                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    return_type: data_type,
+                    distinct: false,
                 }))
             }
-            AggregationFunction::Max { column } => {
+            AggregationFunction::Max { column, output_column } => {
                 let column_index = input_schema.fields.iter().position(|f| f.name() == column)
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
-                    op: AggregateOp::Max,
+                    func: self.convert_agg_op_to_func(AggregateOp::Max),
                     expr: Box::new(Expression::Column(ColumnRef {
                         name: column.clone(),
                         index: column_index,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        data_type: data_type,
                     })),
-                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    return_type: data_type,
+                    distinct: false,
                 }))
             }
         }

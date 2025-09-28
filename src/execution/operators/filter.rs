@@ -31,7 +31,7 @@ use std::time::Instant;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::{Expression, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp, ColumnRef, Literal, LiteralValue, DataType as ExprDataType};
+use crate::expression::ast::{Expression, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp, ColumnRef, Literal};
 use anyhow::Result;
 
 /// 列式向量化过滤器配置
@@ -162,31 +162,6 @@ impl VectorizedFilter {
         self.column_index = Some(index);
     }
 
-    /// 将Arrow DataType转换为表达式DataType
-    fn convert_arrow_to_expr_data_type(&self, data_type: &DataType) -> ExprDataType {
-        match data_type {
-            DataType::Boolean => ExprDataType::Boolean,
-            DataType::Int8 => ExprDataType::Int8,
-            DataType::Int16 => ExprDataType::Int16,
-            DataType::Int32 => ExprDataType::Int32,
-            DataType::Int64 => ExprDataType::Int64,
-            DataType::UInt8 => ExprDataType::UInt8,
-            DataType::UInt16 => ExprDataType::UInt16,
-            DataType::UInt32 => ExprDataType::UInt32,
-            DataType::UInt64 => ExprDataType::UInt64,
-            DataType::Float32 => ExprDataType::Float32,
-            DataType::Float64 => ExprDataType::Float64,
-            DataType::Utf8 => ExprDataType::String,
-            DataType::LargeUtf8 => ExprDataType::String,
-            DataType::Binary => ExprDataType::Binary,
-            DataType::LargeBinary => ExprDataType::Binary,
-            DataType::Date32 => ExprDataType::Date,
-            DataType::Time64(TimeUnit::Microsecond) => ExprDataType::Time,
-            DataType::Timestamp(_, _) => ExprDataType::Timestamp,
-            DataType::Interval(IntervalUnit::DayTime) => ExprDataType::Interval,
-            _ => ExprDataType::String, // 默认值
-        }
-    }
 
     /// 将FilterPredicate转换为Expression
     fn convert_predicate_to_expression(&self, predicate: &FilterPredicate, schema: &Schema) -> Result<Expression> {
@@ -204,8 +179,7 @@ impl VectorizedFilter {
                     })),
                     op: ComparisonOp::Equal,
                     right: Box::new(Expression::Literal(Literal {
-                        value: self.scalar_value_to_literal_value(value)?,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        value: value.clone(),
                     })),
                 }))
             }
@@ -222,8 +196,7 @@ impl VectorizedFilter {
                     })),
                     op: ComparisonOp::NotEqual,
                     right: Box::new(Expression::Literal(Literal {
-                        value: self.scalar_value_to_literal_value(value)?,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        value: value.clone(),
                     })),
                 }))
             }
@@ -240,8 +213,7 @@ impl VectorizedFilter {
                     })),
                     op: ComparisonOp::GreaterThan,
                     right: Box::new(Expression::Literal(Literal {
-                        value: self.scalar_value_to_literal_value(value)?,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        value: value.clone(),
                     })),
                 }))
             }
@@ -258,8 +230,7 @@ impl VectorizedFilter {
                     })),
                     op: ComparisonOp::LessThan,
                     right: Box::new(Expression::Literal(Literal {
-                        value: self.scalar_value_to_literal_value(value)?,
-                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                        value: value.clone(),
                     })),
                 }))
             }
@@ -282,35 +253,13 @@ impl VectorizedFilter {
                     left: Box::new(self.convert_predicate_to_expression(predicate, schema)?),
                     op: LogicalOp::Not,
                     right: Box::new(Expression::Literal(Literal {
-                        value: LiteralValue::Boolean(false),
-                        data_type: DataType::Boolean,
+                        value: ScalarValue::Boolean(Some(false)),
                     })),
                 }))
             }
         }
     }
 
-    /// 将ScalarValue转换为LiteralValue
-    fn scalar_value_to_literal_value(&self, value: &ScalarValue) -> Result<LiteralValue> {
-        match value {
-            ScalarValue::Boolean(Some(v)) => Ok(LiteralValue::Boolean(*v)),
-            ScalarValue::Int8(Some(v)) => Ok(LiteralValue::Int8(*v)),
-            ScalarValue::Int16(Some(v)) => Ok(LiteralValue::Int16(*v)),
-            ScalarValue::Int32(Some(v)) => Ok(LiteralValue::Int32(*v)),
-            ScalarValue::Int64(Some(v)) => Ok(LiteralValue::Int64(*v)),
-            ScalarValue::UInt8(Some(v)) => Ok(LiteralValue::UInt8(*v)),
-            ScalarValue::UInt16(Some(v)) => Ok(LiteralValue::UInt16(*v)),
-            ScalarValue::UInt32(Some(v)) => Ok(LiteralValue::UInt32(*v)),
-            ScalarValue::UInt64(Some(v)) => Ok(LiteralValue::UInt64(*v)),
-            ScalarValue::Float32(Some(v)) => Ok(LiteralValue::Float32(*v)),
-            ScalarValue::Float64(Some(v)) => Ok(LiteralValue::Float64(*v)),
-            ScalarValue::Utf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
-            ScalarValue::LargeUtf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
-            ScalarValue::Binary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
-            ScalarValue::LargeBinary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
-            _ => Err(anyhow::anyhow!("Unsupported scalar value type: {:?}", value)),
-        }
-    }
 
     /// 向量化过滤
     pub fn filter(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
@@ -647,8 +596,8 @@ impl BatchFilterProcessor {
             vec![], // output_ports
             "test_filter".to_string() // name
         );
-        filter.set_column_index(column_index);
-        self.filters.push(filter);
+        filter?.set_column_index(column_index);
+        self.filters.push(filter?);
     }
 
     /// 批量过滤
