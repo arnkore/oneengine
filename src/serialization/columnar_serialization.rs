@@ -286,21 +286,23 @@ impl ColumnBlockSerializer {
 
         // 更新头信息
         let mut updated_header = header;
-        updated_header.compressed = compression_info.compressed;
-        updated_header.compression_algorithm = compression_info.algorithm as u8;
+        let compressed = compression_info.compressed;
+        let algorithm = compression_info.algorithm.clone();
+        let ratio = compression_info.ratio;
+        
+        updated_header.compressed = compressed;
+        updated_header.compression_algorithm = algorithm.clone() as u8;
         updated_header.compressed_size = compressed_data.len() as u32;
         updated_header.original_size = original_size;
         updated_header.checksum = self.calculate_checksum(&compressed_data);
 
         // 更新偏移表
         let mut updated_offset_table = offset_table;
-        if compression_info.compressed {
+        if compressed {
             // 重新计算压缩后的偏移
-            let algorithm = compression_info.algorithm.clone();
-            let ratio = compression_info.ratio;
             self.update_compressed_offsets(&mut updated_offset_table, &CompressionInfo {
-                compressed: compression_info.compressed,
-                algorithm,
+                compressed,
+                algorithm: algorithm.clone(),
                 ratio,
             });
         }
@@ -359,7 +361,7 @@ impl ColumnBlockSerializer {
 
         // 创建RecordBatch
         let batch = RecordBatch::try_new(
-            Arc::new(Schema::new(columns.iter().map(|c| Field::new("col", c.data_type().clone(), true)).collect())),
+            Arc::new(Schema::new(columns.iter().map(|c| Field::new("col", c.data_type().clone(), true)).collect::<Vec<_>>())),
             columns
         ).map_err(|e| format!("Failed to create RecordBatch: {}", e))?;
 
@@ -421,6 +423,10 @@ impl ColumnBlockSerializer {
                 },
                 CompressionAlgorithm::Snappy => {
                     // Snappy压缩比通常在1.5:1到2.5:1之间
+                    page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as u32;
+                },
+                CompressionAlgorithm::Adaptive => {
+                    // 自适应压缩，使用平均压缩比
                     page_offset.compressed_size = (page_offset.size as f64 * compression_info.ratio) as u32;
                 },
             }
@@ -494,6 +500,10 @@ impl Compressor {
                 encoder.finish()
                     .map_err(|e| format!("Gzip compression failed: {}", e))?
             },
+            CompressionAlgorithm::Snappy => {
+                // Snappy压缩
+                lz4_flex::compress(data)
+            },
             CompressionAlgorithm::Adaptive => {
                 // 自适应压缩，选择最佳算法
                 self.adaptive_compress(data)?
@@ -543,7 +553,7 @@ impl Compressor {
             },
             CompressionAlgorithm::Snappy => {
                 // 简化的Snappy解压缩实现
-                Ok(data.to_vec())
+                data.to_vec()
             },
             CompressionAlgorithm::Adaptive => {
                 return Err("Adaptive decompression not supported".to_string());
@@ -638,7 +648,7 @@ impl Compressor {
                     zstd::encode_all(data, 3).map_err(|e| format!("ZSTD compression failed: {}", e))?
                 },
                 CompressionAlgorithm::Lz4 => {
-                    lz4_flex::compress(data).map_err(|e| format!("LZ4 compression failed: {}", e))?
+                    lz4_flex::compress(data)
                 },
                 CompressionAlgorithm::Gzip => {
                     use flate2::write::GzEncoder;

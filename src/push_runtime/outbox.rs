@@ -174,13 +174,14 @@ impl<'a> Outbox<'a> {
         let mut total_rows = 0;
         let mut total_bytes = 0;
         
+        // 计算总行数和字节数
+        for batch in &batches {
+            total_rows += batch.num_rows();
+            total_bytes += self.estimate_batch_size(batch);
+        }
+        
         // 检查信用（如果有信用管理器）
         if let Some(ref mut credit_manager) = self.credit_manager {
-            for batch in &batches {
-                total_rows += batch.num_rows();
-                total_bytes += self.estimate_batch_size(batch);
-            }
-            
             if !credit_manager.has_credit(to) {
                 self.stats.credit_shortage_count += 1;
                 return Err(WouldBlock);

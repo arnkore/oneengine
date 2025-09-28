@@ -53,7 +53,7 @@ impl OneEngine {
         let protocol_adapter = Arc::new(ProtocolAdapter::new(config.protocol.clone()).await?);
         
         // Initialize vectorized driver
-                let vectorized_driver_config = crate::execution::vectorized_driver::VectorizedDriverConfig {
+        let vectorized_driver_config = crate::execution::vectorized_driver::VectorizedDriverConfig {
             max_workers: config.executor.worker_threads,
             memory_limit: 1024 * 1024 * 1024, // 1GB default
             batch_size: 8192, // default batch size

@@ -222,7 +222,7 @@ impl RLESegmentAggregator {
     
     /// 分析Int32 RLE段
     fn analyze_int32_rle_segments(&mut self, array: &Int32Array) -> Result<(), String> {
-        let mut current_value = None;
+        let mut current_value: Option<i32> = None;
         let mut current_start = 0;
         let mut current_length = 0;
         
@@ -241,12 +241,12 @@ impl RLESegmentAggregator {
                     });
                     
                     // 开始新段
-                    current_value = Some(v.to_string());
+                    current_value = Some(v);
                     current_start = i;
                     current_length = 1;
                 },
                 (None, Some(v)) => {
-                    current_value = Some(v.to_string());
+                    current_value = Some(v);
                     current_start = i;
                     current_length = 1;
                 },
@@ -271,7 +271,7 @@ impl RLESegmentAggregator {
     
     /// 分析Int64 RLE段
     fn analyze_int64_rle_segments(&mut self, array: &Int64Array) -> Result<(), String> {
-        let mut current_value = None;
+        let mut current_value: Option<i64> = None;
         let mut current_start = 0;
         let mut current_length = 0;
         
@@ -290,12 +290,12 @@ impl RLESegmentAggregator {
                     });
                     
                     // 开始新段
-                    current_value = Some(v.to_string());
+                    current_value = Some(v);
                     current_start = i;
                     current_length = 1;
                 },
                 (None, Some(v)) => {
-                    current_value = Some(v.to_string());
+                    current_value = Some(v);
                     current_start = i;
                     current_length = 1;
                 },
@@ -406,15 +406,15 @@ impl RLESegmentAggregator {
     
     /// RLE段最小值
     fn min_rle_segments(&self) -> Result<ScalarValue, String> {
-        let mut min_value = None;
+        let mut min_value: Option<i64> = None;
         
         for segment in &self.rle_segments {
             match &segment.value {
                 ScalarValue::Int32(Some(v)) => {
-                    min_value = Some(min_value.map_or(*v, |m: i32| m.min(*v)));
+                    min_value = Some(min_value.map_or(*v as i64, |m: i64| m.min(*v as i64)));
                 },
                 ScalarValue::Int64(Some(v)) => {
-                    min_value = Some(min_value.map_or(*v as i64, |m: i64| m.min(*v as i64)));
+                    min_value = Some(min_value.map_or(*v, |m: i64| m.min(*v)));
                 },
                 _ => return Err("Unsupported data type for min aggregation".to_string()),
             }
@@ -425,12 +425,12 @@ impl RLESegmentAggregator {
     
     /// RLE段最大值
     fn max_rle_segments(&self) -> Result<ScalarValue, String> {
-        let mut max_value = None;
+        let mut max_value: Option<i64> = None;
         
         for segment in &self.rle_segments {
             match &segment.value {
                 ScalarValue::Int32(Some(v)) => {
-                    max_value = Some(max_value.map_or(*v, |m: i32| m.max(*v)));
+                    max_value = Some(max_value.map_or(*v as i64, |m: i64| m.max(*v as i64)));
                 },
                 ScalarValue::Int64(Some(v)) => {
                     max_value = Some(max_value.map_or(*v, |m: i64| m.max(*v)));

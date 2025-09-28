@@ -416,7 +416,7 @@ impl RaceTester {
         let test_func = Arc::new(test_func);
         let results = self.results.clone();
         let thread_count = self.config.thread_count;
-        let operation_count = self.config.operation_count;
+        let mut operation_count = self.config.operation_count;
         
         for _ in 0..thread_count {
             let test_func = test_func.clone();

@@ -506,7 +506,7 @@ impl LengthPrefixedEncoder {
         
         // 序列化消息 - 简化实现，直接构造字节数组
         let mut serialized = Vec::new();
-        serialized.extend_from_slice(&message.message_type as u8 as u8);
+        serialized.push(message.message_type as u8);
         serialized.extend_from_slice(&message.timestamp.elapsed().as_nanos().to_le_bytes());
         serialized.extend_from_slice(&message.data);
         
@@ -520,7 +520,7 @@ impl LengthPrefixedEncoder {
         // 写入消息数据
         self.buffer.put_slice(&serialized);
         
-        Ok(self.buffer.freeze())
+        Ok(self.buffer.clone().freeze())
     }
 }
 
@@ -574,7 +574,7 @@ impl LengthPrefixedDecoder {
             // 简化的消息创建
             let message = Message {
                 message_type: MessageType::Data,
-                data: message_data,
+                data: message_data.freeze(),
                 message_id: 0,
                 timestamp: Instant::now(),
             };
