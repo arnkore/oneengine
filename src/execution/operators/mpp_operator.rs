@@ -143,41 +143,6 @@ pub struct MppOperatorStats {
     pub error_count: u64,
 }
 
-
-
-/// Hash join operator for MPP
-pub struct MppHashJoinOperator {
-    /// Join condition
-    join_condition: JoinCondition,
-    /// Hash table for build side
-    hash_table: HashMap<String, Vec<RecordBatch>>, // Simplified for now
-    /// Statistics
-    stats: MppOperatorStats,
-}
-
-/// Join condition
-#[derive(Debug, Clone)]
-pub struct JoinCondition {
-    /// Left side columns
-    pub left_columns: Vec<String>,
-    /// Right side columns
-    pub right_columns: Vec<String>,
-    /// Join type
-    pub join_type: JoinType,
-}
-
-/// Join type
-#[derive(Debug, Clone, PartialEq)]
-pub enum JoinType {
-    Inner,
-    Left,
-    Right,
-    Full,
-    Semi,
-    Anti,
-}
-
-
 /// MPP operator factory
 pub struct MppOperatorFactory;
 
@@ -201,7 +166,12 @@ impl MppOperatorFactory {
     }
     
     /// Create hash join operator
-    pub fn create_hash_join(join_condition: JoinCondition) -> Box<dyn MppOperator> {
-        Box::new(MppHashJoinOperator::new(join_condition))
+    pub fn create_hash_join(join_condition: crate::execution::operators::mpp_join::JoinCondition) -> Box<dyn MppOperator> {
+        use crate::execution::operators::mpp_join::{MppHashJoinOperator, MppJoinOperatorFactory};
+        Box::new(MppJoinOperatorFactory::create_hash_join(
+            Uuid::new_v4(),
+            join_condition,
+            1024 * 1024 * 1024, // 1GB memory limit
+        ))
     }
 }
