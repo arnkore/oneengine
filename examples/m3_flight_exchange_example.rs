@@ -20,7 +20,7 @@
 //! 
 //! 演示DoPut/DoExchange和基于批次的credit管理
 
-use oneengine::io::flight_exchange::{FlightExchangeServer, FlightExchangeConfig, CreditConfig, CreditState};
+use oneengine::ipc::flight_exchange::{FlightExchangeServer, FlightExchangeConfig, CreditConfig, CreditState};
 use arrow::record_batch::RecordBatch;
 use arrow::array::{Int32Array, StringArray, Float64Array};
 use arrow::datatypes::{Schema, Field, DataType};

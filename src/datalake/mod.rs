@@ -16,24 +16,16 @@
  */
 
 
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! DataLake模块
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供数据湖存储、格式适配器等功能
 
-pub mod scheduler;
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod columnar;
-pub mod execution;
-pub mod push_runtime;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
+pub mod unified_lake_reader;
+pub mod adapters;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+// 重新导出常用类型
+pub use unified_lake_reader::{
+    UnifiedLakeReader, UnifiedLakeReaderConfig, LakeFormat, UnifiedPredicate,
+    TimeTravelConfig, IncrementalReadConfig, PartitionPruningInfo, ColumnProjection,
+    TableMetadata, TableStatistics, FormatAdapter
+};

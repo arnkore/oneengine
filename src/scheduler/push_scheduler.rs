@@ -22,7 +22,7 @@ use crate::scheduler::task_queue::TaskQueue;
 use crate::scheduler::pipeline_manager::PipelineManager;
 use crate::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::io::vectorized_scan_operator::VectorizedScanConfig;
+use crate::execution::operators::vectorized_scan_operator::VectorizedScanConfig;
 use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
 use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
 use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};

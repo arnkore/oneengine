@@ -20,8 +20,8 @@
 //! 
 //! 演示 Parquet 文件读取、Arrow IPC 溢写和恢复
 
-use oneengine::io::parquet_reader::{ParquetReader, ParquetReaderConfig, ColumnSelection};
-use oneengine::io::arrow_ipc::{ArrowIpcWriter, ArrowIpcReader};
+use oneengine::datalake::unified_lake_reader::{UnifiedLakeReader, UnifiedLakeReaderConfig, LakeFormat, ColumnProjection};
+use oneengine::ipc::arrow_ipc::{ArrowIpcWriter, ArrowIpcReader};
 use arrow::record_batch::RecordBatch;
 use arrow::array::{Int32Array, StringArray};
 use arrow::datatypes::{Schema, Field, DataType};

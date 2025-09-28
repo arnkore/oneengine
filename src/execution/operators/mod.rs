@@ -23,6 +23,7 @@
 pub mod vectorized_filter;
 pub mod vectorized_projector;
 pub mod vectorized_aggregator;
+pub mod vectorized_scan_operator;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;

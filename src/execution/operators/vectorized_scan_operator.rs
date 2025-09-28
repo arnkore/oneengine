@@ -26,35 +26,29 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
-use crate::io::data_lake_reader::*;
+use crate::datalake::unified_lake_reader::*;
 use anyhow::Result;
 
 /// 向量化扫描算子配置
 #[derive(Debug, Clone)]
 pub struct VectorizedScanConfig {
-    /// 数据湖读取器配置
-    pub data_lake_config: DataLakeReaderConfig,
+    /// 统一湖仓读取器配置
+    pub lake_reader_config: UnifiedLakeReaderConfig,
     /// 是否启用向量化优化
     pub enable_vectorization: bool,
     /// 是否启用SIMD优化
     pub enable_simd: bool,
-    /// 批次大小
-    pub batch_size: usize,
     /// 是否启用预取
     pub enable_prefetch: bool,
-    /// 剪枝的行组
-    pub pruned_row_groups: Option<Vec<usize>>,
 }
 
 impl Default for VectorizedScanConfig {
     fn default() -> Self {
         Self {
-            data_lake_config: DataLakeReaderConfig::default(),
+            lake_reader_config: UnifiedLakeReaderConfig::default(),
             enable_vectorization: true,
             enable_simd: true,
-            batch_size: 8192,
             enable_prefetch: true,
-            pruned_row_groups: None,
         }
     }
 }
@@ -62,7 +56,7 @@ impl Default for VectorizedScanConfig {
 /// 向量化扫描算子
 pub struct VectorizedScanOperator {
     config: VectorizedScanConfig,
-    data_lake_reader: DataLakeReader,
+    lake_reader: UnifiedLakeReader,
     /// 算子ID
     operator_id: u32,
     /// 输入端口
@@ -73,12 +67,16 @@ pub struct VectorizedScanOperator {
     finished: bool,
     /// 算子名称
     name: String,
-    /// 当前文件路径
-    current_file_path: Option<String>,
+    /// 当前表路径
+    current_table_path: Option<String>,
     /// 当前批次索引
     current_batch_index: usize,
     /// 总批次数
     total_batches: usize,
+    /// 当前快照ID
+    current_snapshot_id: Option<i64>,
+    /// 表元数据
+    table_metadata: Option<TableMetadata>,
     /// 统计信息
     stats: ScanStats,
 }
@@ -91,8 +89,12 @@ pub struct ScanStats {
     pub avg_scan_time: std::time::Duration,
     pub file_read_time: std::time::Duration,
     pub predicate_pushdown_time: std::time::Duration,
-    pub page_index_time: std::time::Duration,
-    pub dictionary_optimization_time: std::time::Duration,
+    pub partition_pruning_time: std::time::Duration,
+    pub column_projection_time: std::time::Duration,
+    pub time_travel_time: std::time::Duration,
+    pub incremental_read_time: std::time::Duration,
+    pub snapshot_id: Option<i64>,
+    pub files_scanned: u64,
 }
 
 impl VectorizedScanOperator {
@@ -103,29 +105,32 @@ impl VectorizedScanOperator {
         output_ports: Vec<PortId>,
         name: String,
     ) -> Self {
-        let data_lake_reader = DataLakeReader::new("default_path".to_string(), config.data_lake_config.clone());
+        let lake_reader = UnifiedLakeReader::new(config.lake_reader_config.clone());
         
         Self {
             config,
-            data_lake_reader,
+            lake_reader,
             operator_id,
             input_ports,
             output_ports,
             finished: false,
             name,
-            current_file_path: None,
+            current_table_path: None,
             current_batch_index: 0,
             total_batches: 0,
+            current_snapshot_id: None,
+            table_metadata: None,
             stats: ScanStats::default(),
         }
     }
 
-    /// 设置要扫描的文件路径
-    pub fn set_file_path(&mut self, file_path: String) {
-        self.current_file_path = Some(file_path);
+    /// 设置要扫描的表路径
+    pub fn set_table_path(&mut self, table_path: String) {
+        self.current_table_path = Some(table_path);
         self.current_batch_index = 0;
         self.total_batches = 0;
         self.finished = false;
+        self.current_snapshot_id = None;
     }
 
     /// 扫描下一个批次
@@ -134,13 +139,23 @@ impl VectorizedScanOperator {
             return Ok(None);
         }
 
-        let file_path = self.current_file_path.as_ref()
-            .ok_or("No file path set")?;
+        let table_path = self.current_table_path.as_ref()
+            .ok_or("No table path set")?;
 
         let start = Instant::now();
         
-        // 使用数据湖读取器读取数据
-        let batches = self.data_lake_reader.read_data(file_path)?;
+        // 打开表（如果尚未打开）
+        if self.table_metadata.is_none() {
+            self.lake_reader.open()
+                .map_err(|e| format!("Failed to open table: {}", e))?;
+            self.table_metadata = Some(self.lake_reader.get_metadata()
+                .map_err(|e| format!("Failed to get metadata: {}", e))?
+                .clone());
+        }
+        
+        // 使用统一湖仓读取器读取数据
+        let batches = self.lake_reader.read_data()
+            .map_err(|e| format!("Failed to read data: {}", e))?;
         
         if self.current_batch_index >= batches.len() {
             self.finished = true;
@@ -160,9 +175,14 @@ impl VectorizedScanOperator {
     }
 
     /// 应用谓词下推
-    pub fn apply_predicate_pushdown(&mut self, _predicates: Vec<PredicateFilter>) -> Result<(), String> {
-        // 设置谓词（需要修改DataLakeReader来支持这个操作）
-        // self.data_lake_reader.config.predicates = predicates;
+    pub fn apply_predicate_pushdown(&mut self, predicates: Vec<UnifiedPredicate>) -> Result<(), String> {
+        self.lake_reader.set_predicates(predicates);
+        let start = Instant::now();
+        let filtered_files = self.lake_reader.apply_predicate_pushdown()
+            .map_err(|e| format!("Failed to apply predicate pushdown: {}", e))?;
+        let duration = start.elapsed();
+        self.stats.predicate_pushdown_time += duration;
+        debug!("Applied predicate pushdown: {} files filtered in {:?}", filtered_files, duration);
         Ok(())
     }
     
@@ -173,51 +193,67 @@ impl VectorizedScanOperator {
     }
 
     /// 应用列投影
-    pub fn apply_column_projection(&mut self, _columns: Vec<String>) -> Result<(), String> {
-        // 简化的列投影实现，避免使用不存在的API
-        // 对于简化实现，直接返回成功
+    pub fn apply_column_projection(&mut self, columns: Vec<String>) -> Result<(), String> {
+        let projection = ColumnProjection {
+            columns,
+            select_all: false,
+        };
+        self.lake_reader.set_column_projection(projection);
+        let start = Instant::now();
+        self.lake_reader.apply_column_projection()
+            .map_err(|e| format!("Failed to apply column projection: {}", e))?;
+        let duration = start.elapsed();
+        self.stats.column_projection_time += duration;
+        debug!("Applied column projection in {:?}", duration);
         Ok(())
     }
 
     /// 应用分区剪枝
     pub fn apply_partition_pruning(&mut self, pruning_info: PartitionPruningInfo) -> Result<(), String> {
-        use parquet::file::reader::{FileReader, SerializedFileReader};
-        use parquet::file::metadata::RowGroupMetaData;
-        
-        // 打开Parquet文件
-        let file = std::fs::File::open("test.parquet")
-            .map_err(|e| format!("Failed to open file: {}", e))?;
-        let reader = SerializedFileReader::new(file)
-            .map_err(|e| format!("Failed to create reader: {}", e))?;
-        
-        // 获取文件元数据
-        let metadata = reader.metadata();
-        let mut valid_row_groups = Vec::new();
-        
-        // 遍历所有行组，检查是否匹配分区条件
-        for (i, row_group) in metadata.row_groups().iter().enumerate() {
-            let mut matches = true;
-            
-            // 检查分区列匹配
-            for (column_name, expected_value) in &pruning_info.partition_values {
-                // 简化的列索引查找
-                let column_index = 0; // 对于简化实现，使用第一个列
-                let column_metadata = row_group.column(column_index);
-                
-                // 简化的统计信息检查，避免使用不存在的API
-                // 对于简化实现，假设所有数据都匹配
-                matches = matches && true;
-            }
-            
-            if matches {
-                valid_row_groups.push(i);
-            }
-        }
-        
-        // 更新配置
-        self.config.pruned_row_groups = Some(valid_row_groups);
-        
+        self.lake_reader.set_partition_pruning(pruning_info);
+        let start = Instant::now();
+        let pruned_files = self.lake_reader.apply_partition_pruning()
+            .map_err(|e| format!("Failed to apply partition pruning: {}", e))?;
+        let duration = start.elapsed();
+        self.stats.partition_pruning_time += duration;
+        debug!("Applied partition pruning: {} files pruned in {:?}", pruned_files, duration);
         Ok(())
+    }
+
+    /// 应用时间旅行
+    pub fn apply_time_travel(&mut self, time_travel: TimeTravelConfig) -> Result<(), String> {
+        self.lake_reader.set_time_travel(time_travel);
+        let start = Instant::now();
+        self.lake_reader.apply_time_travel()
+            .map_err(|e| format!("Failed to apply time travel: {}", e))?;
+        let duration = start.elapsed();
+        self.stats.time_travel_time += duration;
+        debug!("Applied time travel in {:?}", duration);
+        Ok(())
+    }
+    
+    /// 应用增量读取
+    pub fn apply_incremental_read(&mut self, incremental: IncrementalReadConfig) -> Result<(), String> {
+        self.lake_reader.set_incremental_read(incremental);
+        let start = Instant::now();
+        self.lake_reader.apply_incremental_read()
+            .map_err(|e| format!("Failed to apply incremental read: {}", e))?;
+        let duration = start.elapsed();
+        self.stats.incremental_read_time += duration;
+        debug!("Applied incremental read in {:?}", duration);
+        Ok(())
+    }
+    
+    /// 获取表元数据
+    pub fn get_table_metadata(&self) -> Option<&TableMetadata> {
+        self.table_metadata.as_ref()
+    }
+    
+    /// 获取表统计信息
+    pub fn get_table_statistics(&self) -> Result<TableStatistics, String> {
+        self.lake_reader.get_statistics()
+            .map_err(|e| format!("Failed to get statistics: {}", e))
+            .map(|s| s.clone())
     }
 
     /// 更新统计信息
@@ -254,7 +290,7 @@ impl Operator for VectorizedScanOperator {
     fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
         match ev {
             Event::StartScan { file_path } => {
-                self.set_file_path(file_path);
+                self.set_table_path(file_path);
                 // 开始扫描第一个批次
                 match self.scan_next_batch() {
                     Ok(Some(batch)) => {
@@ -360,7 +396,7 @@ impl VectorizedScanOperatorFactory {
 #[derive(Debug, Clone)]
 pub enum ScanEvent {
     StartScan { file_path: String },
-    ApplyPredicates { predicates: Vec<PredicateFilter> },
+    ApplyPredicates { predicates: Vec<UnifiedPredicate> },
     ApplyProjection { columns: Vec<String> },
     ApplyPartitionPruning { pruning_info: PartitionPruningInfo },
 }

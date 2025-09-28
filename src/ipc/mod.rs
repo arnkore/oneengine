@@ -15,19 +15,15 @@
  * limitations under the License.
  */
 
-
-//! IO模块
+//! IPC模块
 //! 
-//! 提供文件I/O、Parquet读取、Arrow IPC等功能
+//! 提供Arrow IPC、Flight Exchange、Flight Server等进程间通信功能
 
-pub mod parquet_reader;
 pub mod arrow_ipc;
-pub mod flight_server;
 pub mod flight_exchange;
-pub mod data_lake_reader;
-pub mod orc_reader;
-pub mod iceberg_integration;
-pub mod vectorized_scan_operator;
+pub mod flight_server;
 
 // 重新导出常用类型
-pub use parquet_reader::{ParquetReader, ParquetReaderConfig, ParquetFileStats, Predicate, ColumnSelection};
+pub use arrow_ipc::{ArrowIpcWriter, ArrowIpcReader, ArrowIpcSpillManager};
+pub use flight_exchange::{FlightExchangeServer, FlightExchangeConfig, CreditConfig, CreditState, StreamState, FlightExchangeState, FlightClient};
+pub use flight_server::{OneEngineFlightService, FlightServerState, FlightServerConfig, FlightClient as FlightServerClient, FlightClientConfig};

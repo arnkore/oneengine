@@ -24,7 +24,7 @@ use oneengine::execution::operators::vectorized_filter::*;
 use oneengine::execution::operators::vectorized_projector::*;
 use oneengine::execution::operators::vectorized_aggregator::*;
 use oneengine::push_runtime::{EventLoop, SimpleMetricsCollector, Event, PortId};
-use oneengine::io::data_lake_reader::*;
+use oneengine::datalake::unified_lake_reader::*;
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;

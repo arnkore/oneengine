@@ -26,7 +26,7 @@ use oneengine::execution::operators::{
     filter_project::{FilterProjectOperator, FilterProjectConfig, FilterPredicate},
     hash_aggregation::{HashAggOperator, HashAggConfig, AggExpression, AggFunction}
 };
-use oneengine::io::parquet_reader::ColumnSelection;
+use oneengine::datalake::unified_lake_reader::ColumnProjection;
 use arrow::record_batch::RecordBatch;
 use arrow::array::{Int32Array, StringArray, Float64Array};
 use arrow::datatypes::{DataType, Field, Schema};

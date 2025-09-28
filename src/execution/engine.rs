@@ -19,7 +19,7 @@
 use crate::scheduler::push_scheduler::PushScheduler;
 use crate::execution::executor::Executor;
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::io::vectorized_scan_operator::VectorizedScanConfig;
+use crate::execution::operators::vectorized_scan_operator::VectorizedScanConfig;
 use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
 use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
 use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};

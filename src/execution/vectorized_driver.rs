@@ -24,7 +24,7 @@ use crate::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, Simp
 use crate::execution::operators::vectorized_filter::*;
 use crate::execution::operators::vectorized_projector::*;
 use crate::execution::operators::vectorized_aggregator::*;
-use crate::io::vectorized_scan_operator::*;
+use crate::execution::operators::vectorized_scan_operator::*;
 use crate::execution::worker::Worker;
 use arrow::array::*;
 use arrow::datatypes::*;
@@ -232,7 +232,7 @@ impl VectorizedDriver {
                         format!("scan_{}", node.operator_id),
                     );
                     
-                    scan_operator.set_file_path(file_path.clone());
+                    scan_operator.set_table_path(file_path.clone());
                     self.event_loop.register_operator(
                         node.operator_id, 
                         Box::new(scan_operator),

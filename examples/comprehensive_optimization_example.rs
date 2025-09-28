@@ -34,7 +34,7 @@ use oneengine::execution::jit::expression_jit::JITCompiler;
 use oneengine::execution::operators::vectorized_filter::{VectorizedFilter, FilterPredicate};
 use oneengine::execution::operators::vectorized_projector::{VectorizedProjector, ProjectionExpression};
 use oneengine::execution::operators::vectorized_aggregator::{VectorizedAggregator, AggregationFunction};
-use oneengine::io::iceberg_integration::IcebergTableReader;
+use oneengine::datalake::unified_lake_reader::{UnifiedLakeReader, LakeFormat};
 use oneengine::push_runtime::{Event, OpStatus, Outbox, PortId, OperatorId};
 use arrow::record_batch::RecordBatch;
 use arrow::array::*;

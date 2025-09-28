@@ -15,25 +15,15 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 湖仓格式适配器
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供各种湖仓格式的适配器实现
 
-pub mod scheduler;
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod columnar;
-pub mod execution;
-pub mod push_runtime;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
+pub mod iceberg_adapter;
+pub mod paimon_adapter;
+pub mod hudi_adapter;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+// 重新导出适配器
+pub use iceberg_adapter::IcebergAdapter;
+pub use paimon_adapter::PaimonAdapter;
+pub use hudi_adapter::HudiAdapter;
