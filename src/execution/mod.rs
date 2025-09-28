@@ -16,7 +16,6 @@
  */
 
 
-pub mod context;
 pub mod vectorized_operator;
 pub mod driver;
 pub mod scheduler;
