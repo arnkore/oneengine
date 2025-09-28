@@ -17,22 +17,60 @@
 
 //! Iceberg格式适配器
 //! 
-//! 实现Apache Iceberg表的读取和优化功能
+//! 实现Apache Iceberg表的真实数据读取和优化功能
 
 use arrow::record_batch::RecordBatch;
-use arrow::datatypes::{Schema, Field, DataType};
+use arrow::datatypes::{Schema, Field, DataType, SchemaRef};
+use arrow::array::{ArrayRef, StringArray, Int64Array, Float64Array, BooleanArray, TimestampMicrosecondArray};
 use std::collections::HashMap;
 use std::path::Path;
 use std::fs;
 use std::sync::Arc;
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::{debug, info, warn, error};
+use serde_json::Value;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::file::reader::{FileReader, SerializedFileReader};
+use std::fs::File;
+use avro_rs::{Reader, from_value, Schema as AvroSchema};
+use serde::{Deserialize, Serialize};
 
 use crate::datalake::unified_lake_reader::{
     FormatAdapter, TableMetadata, TableStatistics, UnifiedPredicate,
     ColumnProjection, PartitionPruningInfo, TimeTravelConfig, IncrementalReadConfig,
     SnapshotInfo, PartitionSpec, PartitionField, SortOrder, SortField,
 };
+
+/// Iceberg表元数据
+#[derive(Debug, Clone)]
+struct IcebergTableMetadata {
+    table_id: String,
+    table_name: String,
+    namespace: String,
+    location: String,
+    current_snapshot_id: Option<i64>,
+    snapshots: Vec<IcebergSnapshot>,
+    partition_specs: HashMap<i32, PartitionSpec>,
+    default_spec_id: i32,
+    sort_orders: HashMap<i32, SortOrder>,
+    default_sort_order_id: i32,
+    current_schema_id: i32,
+    schemas: HashMap<i32, Schema>,
+    properties: HashMap<String, String>,
+    created_at: i64,
+    updated_at: i64,
+}
+
+/// Iceberg快照
+#[derive(Debug, Clone)]
+struct IcebergSnapshot {
+    snapshot_id: i64,
+    timestamp_ms: i64,
+    parent_snapshot_id: Option<i64>,
+    manifest_list: String,
+    summary: HashMap<String, String>,
+    schema_id: i32,
+}
 
 /// Iceberg文件清单条目
 #[derive(Debug, Clone)]
@@ -47,29 +85,68 @@ struct ManifestEntry {
     null_value_counts: HashMap<String, u64>,
     lower_bounds: HashMap<String, Vec<u8>>,
     upper_bounds: HashMap<String, Vec<u8>>,
+    key_metadata: Option<Vec<u8>>,
+    split_offsets: Vec<i64>,
+    sort_order_id: Option<i32>,
 }
 
-/// Iceberg表配置
-#[derive(Debug, Clone)]
-struct IcebergTableConfig {
-    table_name: String,
-    namespace: String,
-    location: String,
-    current_schema_id: i32,
-    default_spec_id: i32,
-    default_sort_order_id: i32,
-    properties: HashMap<String, String>,
+/// Avro Manifest List条目
+#[derive(Debug, Deserialize, Serialize)]
+struct AvroManifestListEntry {
+    manifest_path: String,
+    manifest_length: i64,
+    partition_spec_id: i32,
+    content: i32,
+    sequence_number: i64,
+    min_sequence_number: i64,
+    added_snapshot_id: i64,
+    added_files_count: i32,
+    existing_files_count: i32,
+    deleted_files_count: i32,
+    added_rows_count: i64,
+    existing_rows_count: i64,
+    deleted_rows_count: i64,
+    partitions: Option<Vec<AvroPartitionFieldSummary>>,
+    key_metadata: Option<Vec<u8>>,
 }
 
-/// Iceberg快照
-#[derive(Debug, Clone)]
-struct IcebergSnapshot {
+/// Avro分区字段摘要
+#[derive(Debug, Deserialize, Serialize)]
+struct AvroPartitionFieldSummary {
+    contains_null: bool,
+    contains_nan: Option<bool>,
+    lower_bound: Option<Vec<u8>>,
+    upper_bound: Option<Vec<u8>>,
+}
+
+/// Avro Manifest条目
+#[derive(Debug, Deserialize, Serialize)]
+struct AvroManifestEntry {
+    status: i32,
     snapshot_id: i64,
-    timestamp_ms: i64,
-    parent_snapshot_id: Option<i64>,
-    manifest_list: String,
-    summary: HashMap<String, String>,
-    schema_id: i32,
+    sequence_number: Option<i64>,
+    file_sequence_number: Option<i64>,
+    data_file: AvroDataFile,
+}
+
+/// Avro数据文件
+#[derive(Debug, Deserialize, Serialize)]
+struct AvroDataFile {
+    content: i32,
+    file_path: String,
+    file_format: String,
+    partition: HashMap<String, String>,
+    record_count: i64,
+    file_size_in_bytes: i64,
+    column_sizes: Option<HashMap<String, i64>>,
+    value_counts: Option<HashMap<String, i64>>,
+    null_value_counts: Option<HashMap<String, i64>>,
+    nan_value_counts: Option<HashMap<String, i64>>,
+    lower_bounds: Option<HashMap<String, Vec<u8>>>,
+    upper_bounds: Option<HashMap<String, Vec<u8>>>,
+    key_metadata: Option<Vec<u8>>,
+    split_offsets: Option<Vec<i64>>,
+    sort_order_id: Option<i32>,
 }
 
 /// Iceberg适配器
@@ -78,8 +155,8 @@ pub struct IcebergAdapter {
     table_path: String,
     /// 表元数据
     table_metadata: Option<TableMetadata>,
-    /// 表配置
-    table_config: Option<IcebergTableConfig>,
+    /// Iceberg表元数据
+    iceberg_metadata: Option<IcebergTableMetadata>,
     /// 当前快照ID
     current_snapshot_id: Option<i64>,
     /// 当前快照
@@ -106,7 +183,7 @@ impl IcebergAdapter {
         Self {
             table_path: String::new(),
             table_metadata: None,
-            table_config: None,
+            iceberg_metadata: None,
             current_snapshot_id: None,
             current_snapshot: None,
             manifest_entries: Vec::new(),
@@ -135,22 +212,28 @@ impl IcebergAdapter {
             return Err(anyhow::anyhow!("Metadata file not found: {:?}", metadata_file));
         }
         
-        // 解析表配置
-        self.table_config = Some(self.parse_table_config(&metadata_file)?);
+        // 解析Iceberg表元数据
+        self.iceberg_metadata = Some(self.parse_iceberg_metadata(&metadata_file)?);
+        let iceberg_metadata = self.iceberg_metadata.as_ref().unwrap();
         
-        // 读取当前快照信息
-        let current_snapshot = self.load_current_snapshot(table_path)?;
-        self.current_snapshot = Some(current_snapshot.clone());
-        self.current_snapshot_id = Some(current_snapshot.snapshot_id);
+        // 设置当前快照
+        self.current_snapshot_id = iceberg_metadata.current_snapshot_id;
+        if let Some(snapshot_id) = self.current_snapshot_id {
+            self.current_snapshot = iceberg_metadata.snapshots.iter()
+                .find(|s| s.snapshot_id == snapshot_id)
+                .cloned();
+        }
         
-        // 构建表元数据
-        self.table_metadata = Some(self.build_table_metadata(table_path, &current_snapshot)?);
+        // 构建统一表元数据
+        self.table_metadata = Some(self.build_unified_table_metadata(iceberg_metadata)?);
         
         // 加载文件清单
-        self.manifest_entries = self.load_manifest_entries(table_path, &current_snapshot)?;
+        if let Some(snapshot) = &self.current_snapshot {
+            self.manifest_entries = self.load_manifest_entries(table_path, snapshot)?;
+        }
         
         // 构建表Schema
-        self.table_schema = Some(self.build_table_schema()?);
+        self.table_schema = Some(self.build_table_schema(iceberg_metadata)?);
         
         info!("Successfully initialized Iceberg table with {} manifest entries", 
               self.manifest_entries.len());
@@ -158,334 +241,763 @@ impl IcebergAdapter {
         Ok(())
     }
     
-    /// 解析表配置文件
-    fn parse_table_config(&self, _metadata_file: &Path) -> Result<IcebergTableConfig> {
-        // 这里应该解析真正的JSON配置文件
-        // 为了简化，我们返回一个模拟的配置
-        Ok(IcebergTableConfig {
-            table_name: "sample_table".to_string(),
-            namespace: "default".to_string(),
-            location: self.table_path.clone(),
-            current_schema_id: 1,
-            default_spec_id: 0,
-            default_sort_order_id: 0,
-            properties: HashMap::from([
-                ("write.format.default".to_string(), "parquet".to_string()),
-                ("write.parquet.compression-codec".to_string(), "snappy".to_string()),
-            ]),
-        })
-    }
-    
-    /// 加载当前快照信息
-    fn load_current_snapshot(&self, table_path: &str) -> Result<IcebergSnapshot> {
-        // 这里应该从元数据文件中读取真正的快照信息
-        // 为了简化，我们返回一个模拟的快照
-        Ok(IcebergSnapshot {
-            snapshot_id: 12345,
-            timestamp_ms: 1703001600000, // 2023-12-20
-            parent_snapshot_id: Some(12344),
-            manifest_list: format!("{}/metadata/snap-{}.avro", table_path, 12345),
-            summary: HashMap::from([
-                ("added-records".to_string(), "1000".to_string()),
-                ("added-files".to_string(), "5".to_string()),
-            ]),
-            schema_id: 1,
-        })
-    }
-    
-    /// 构建表元数据
-    fn build_table_metadata(&self, table_path: &str, snapshot: &IcebergSnapshot) -> Result<TableMetadata> {
-        let table_name = table_path.split('/').last().unwrap_or("unknown").to_string();
-        Ok(TableMetadata {
-            table_id: format!("iceberg_table_{}", table_name),
+    /// 解析Iceberg表元数据
+    fn parse_iceberg_metadata(&self, metadata_file: &Path) -> Result<IcebergTableMetadata> {
+        let content = fs::read_to_string(metadata_file)?;
+        let json: Value = serde_json::from_str(&content)?;
+        
+        let table_id = json["table-id"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing table-id"))?
+            .to_string();
+        
+        let table_name = json["table-name"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing table-name"))?
+            .to_string();
+        
+        let namespace = json["namespace"].as_array()
+            .ok_or_else(|| anyhow::anyhow!("Missing namespace"))?
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(".");
+        
+        let location = json["location"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing location"))?
+            .to_string();
+        
+        let current_snapshot_id = json["current-snapshot-id"].as_i64();
+        
+        // 解析快照
+        let mut snapshots = Vec::new();
+        if let Some(snapshots_array) = json["snapshots"].as_array() {
+            for snapshot_json in snapshots_array {
+                let snapshot = IcebergSnapshot {
+                    snapshot_id: snapshot_json["snapshot-id"].as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("Missing snapshot-id"))?,
+                    timestamp_ms: snapshot_json["timestamp-ms"].as_i64()
+                        .ok_or_else(|| anyhow::anyhow!("Missing timestamp-ms"))?,
+                    parent_snapshot_id: snapshot_json["parent-snapshot-id"].as_i64(),
+                    manifest_list: snapshot_json["manifest-list"].as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing manifest-list"))?
+                        .to_string(),
+                    summary: snapshot_json["summary"]
+                        .as_object()
+                        .map(|obj| obj.iter()
+                            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                            .collect())
+                        .unwrap_or_default(),
+                    schema_id: snapshot_json["schema-id"].as_i64()
+                        .unwrap_or(0) as i32,
+                };
+                snapshots.push(snapshot);
+            }
+        }
+        
+        // 解析分区规范
+        let mut partition_specs = HashMap::new();
+        if let Some(specs_array) = json["partition-specs"].as_array() {
+            for spec_json in specs_array {
+                let spec_id = spec_json["spec-id"].as_i64().unwrap_or(0) as i32;
+                let mut partition_fields = Vec::new();
+                
+                if let Some(fields_array) = spec_json["fields"].as_array() {
+                    for field_json in fields_array {
+                        let field = PartitionField {
+                            field_name: field_json["name"].as_str()
+                                .unwrap_or("").to_string(),
+                            field_id: field_json["field-id"].as_i64().unwrap_or(0) as i32,
+                            transform: field_json["transform"].as_str()
+                                .unwrap_or("identity").to_string(),
+                        };
+                        partition_fields.push(field);
+                    }
+                }
+                
+                let spec = PartitionSpec {
+                    partition_fields,
+                    spec_id,
+                };
+                partition_specs.insert(spec_id, spec);
+            }
+        }
+        
+        let default_spec_id = json["default-spec-id"].as_i64().unwrap_or(0) as i32;
+        
+        // 解析排序顺序
+        let mut sort_orders = HashMap::new();
+        if let Some(orders_array) = json["sort-orders"].as_array() {
+            for order_json in orders_array {
+                let order_id = order_json["order-id"].as_i64().unwrap_or(0) as i32;
+                let mut sort_fields = Vec::new();
+                
+                if let Some(fields_array) = order_json["fields"].as_array() {
+                    for field_json in fields_array {
+                        let field = SortField {
+                            field_name: field_json["name"].as_str()
+                                .unwrap_or("").to_string(),
+                            field_id: field_json["field-id"].as_i64().unwrap_or(0) as i32,
+                            direction: field_json["direction"].as_str()
+                                .unwrap_or("asc").to_string(),
+                            null_order: field_json["null-order"].as_str()
+                                .unwrap_or("first").to_string(),
+                        };
+                        sort_fields.push(field);
+                    }
+                }
+                
+                let order = SortOrder {
+                    sort_fields,
+                    order_id,
+                };
+                sort_orders.insert(order_id, order);
+            }
+        }
+        
+        let default_sort_order_id = json["default-sort-order-id"].as_i64().unwrap_or(0) as i32;
+        let current_schema_id = json["current-schema-id"].as_i64().unwrap_or(0) as i32;
+        
+        // 解析Schema
+        let mut schemas = HashMap::new();
+        if let Some(schemas_array) = json["schemas"].as_array() {
+            for schema_json in schemas_array {
+                let schema_id = schema_json["schema-id"].as_i64().unwrap_or(0) as i32;
+                let schema = self.parse_iceberg_schema(schema_json)?;
+                schemas.insert(schema_id, schema);
+            }
+        }
+        
+        // 解析属性
+        let properties = json["properties"]
+            .as_object()
+            .map(|obj| obj.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                .collect())
+            .unwrap_or_default();
+        
+        let created_at = json["created-at"].as_i64().unwrap_or(0);
+        let updated_at = json["updated-at"].as_i64().unwrap_or(0);
+        
+        Ok(IcebergTableMetadata {
+            table_id,
             table_name,
-            namespace: "default".to_string(),
-            current_snapshot_id: Some(snapshot.snapshot_id),
-            snapshots: vec![
-                SnapshotInfo {
-                    snapshot_id: snapshot.snapshot_id,
-                    timestamp_ms: snapshot.timestamp_ms,
-                    parent_snapshot_id: snapshot.parent_snapshot_id,
-                    operation: "append".to_string(),
-                    summary: snapshot.summary.clone(),
+            namespace,
+            location,
+            current_snapshot_id,
+            snapshots,
+            partition_specs,
+            default_spec_id,
+            sort_orders,
+            default_sort_order_id,
+            current_schema_id,
+            schemas,
+            properties,
+            created_at,
+            updated_at,
+        })
+    }
+    
+    /// 解析Iceberg Schema
+    fn parse_iceberg_schema(&self, schema_json: &Value) -> Result<Schema> {
+        let mut fields = Vec::new();
+        
+        if let Some(fields_array) = schema_json["fields"].as_array() {
+            for field_json in fields_array {
+                let field = self.parse_iceberg_field(field_json)?;
+                fields.push(field);
+            }
+        }
+        
+        Ok(Schema::new(fields))
+    }
+    
+    /// 解析Iceberg字段
+    fn parse_iceberg_field(&self, field_json: &Value) -> Result<Field> {
+        let name = field_json["name"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing field name"))?
+            .to_string();
+        
+        let field_id = field_json["id"].as_i64().unwrap_or(0) as i32;
+        let required = field_json["required"].as_bool().unwrap_or(false);
+        
+        let data_type = self.parse_iceberg_type(field_json["type"].as_object()
+            .ok_or_else(|| anyhow::anyhow!("Missing field type"))?)?;
+        
+        let mut metadata = HashMap::new();
+        metadata.insert("field-id".to_string(), field_id.to_string());
+        
+        Ok(Field::new(name, data_type, !required).with_metadata(metadata))
+    }
+    
+    /// 解析Iceberg数据类型
+    fn parse_iceberg_type(&self, type_obj: &serde_json::Map<String, Value>) -> Result<DataType> {
+        let type_name = type_obj.get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Missing type name"))?;
+        
+        match type_name {
+            "boolean" => Ok(DataType::Boolean),
+            "int" => {
+                let width = type_obj.get("width")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(32) as i8;
+                match width {
+                    8 => Ok(DataType::Int8),
+                    16 => Ok(DataType::Int16),
+                    32 => Ok(DataType::Int32),
+                    64 => Ok(DataType::Int64),
+                    _ => Ok(DataType::Int32),
+                }
+            },
+            "long" => Ok(DataType::Int64),
+            "float" => Ok(DataType::Float32),
+            "double" => Ok(DataType::Float64),
+            "date" => Ok(DataType::Date32),
+            "time" => Ok(DataType::Time64(arrow::datatypes::TimeUnit::Microsecond)),
+            "timestamp" => {
+                let unit = type_obj.get("unit")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("micros");
+                match unit {
+                    "micros" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None)),
+                    "millis" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None)),
+                    "nanos" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None)),
+                    _ => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, None)),
+                }
+            },
+            "timestamptz" => {
+                let unit = type_obj.get("unit")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("micros");
+                match unit {
+                    "micros" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, Some(Arc::from("UTC")))),
+                    "millis" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, Some(Arc::from("UTC")))),
+                    "nanos" => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, Some(Arc::from("UTC")))),
+                    _ => Ok(DataType::Timestamp(arrow::datatypes::TimeUnit::Microsecond, Some(Arc::from("UTC")))),
+                }
+            },
+            "string" => Ok(DataType::Utf8),
+            "uuid" => Ok(DataType::FixedSizeBinary(16)),
+            "binary" => Ok(DataType::Binary),
+            "decimal" => {
+                let precision = type_obj.get("precision")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(10) as i8;
+                let scale = type_obj.get("scale")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i8;
+                Ok(DataType::Decimal128(precision as u8, scale))
+            },
+            "struct" => {
+                let mut struct_fields = Vec::new();
+                if let Some(fields_array) = type_obj.get("fields").and_then(|v| v.as_array()) {
+                    for field_json in fields_array {
+                        let field = self.parse_iceberg_field(field_json)?;
+                        struct_fields.push(field);
+                    }
+                }
+                Ok(DataType::Struct(struct_fields.into()))
+            },
+            "list" => {
+                let element_type = type_obj.get("element")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| self.parse_iceberg_type(obj))
+                    .transpose()?
+                    .unwrap_or(DataType::Utf8);
+                Ok(DataType::List(Arc::new(Field::new("item", element_type, true))))
+            },
+            "map" => {
+                let key_type = type_obj.get("key")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| self.parse_iceberg_type(obj))
+                    .transpose()?
+                    .unwrap_or(DataType::Utf8);
+                let value_type = type_obj.get("value")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| self.parse_iceberg_type(obj))
+                    .transpose()?
+                    .unwrap_or(DataType::Utf8);
+                
+                let key_field = Field::new("key", key_type, false);
+                let value_field = Field::new("value", value_type, true);
+                let struct_field = Field::new("entries", DataType::Struct(vec![key_field, value_field].into()), false);
+                Ok(DataType::List(Arc::new(struct_field)))
                 },
-            ],
-            partition_spec: Some(PartitionSpec {
-                partition_fields: vec![
-                    PartitionField {
-                        field_name: "year".to_string(),
-                        field_id: 1000,
-                        transform: "identity".to_string(),
-                    },
-                    PartitionField {
-                        field_name: "month".to_string(),
-                        field_id: 1001,
-                        transform: "identity".to_string(),
-                    },
-                ],
-                spec_id: 0,
-            }),
-            sort_order: Some(SortOrder {
-                sort_fields: vec![
-                    SortField {
-                        field_name: "id".to_string(),
-                        field_id: 1,
-                        direction: "asc".to_string(),
-                        null_order: "first".to_string(),
-                    },
-                ],
-                order_id: 0,
-            }),
-            properties: HashMap::from([
-                ("write.format.default".to_string(), "parquet".to_string()),
-                ("write.parquet.compression-codec".to_string(), "snappy".to_string()),
-            ]),
-            created_at: 1702915200000, // 2023-12-19
-            updated_at: snapshot.timestamp_ms,
+                _ => {
+                warn!("Unknown Iceberg type: {}, defaulting to Utf8", type_name);
+                Ok(DataType::Utf8)
+            }
+        }
+    }
+    
+    /// 构建统一表元数据
+    fn build_unified_table_metadata(&self, iceberg_metadata: &IcebergTableMetadata) -> Result<TableMetadata> {
+        let snapshots = iceberg_metadata.snapshots.iter()
+            .map(|s| SnapshotInfo {
+                snapshot_id: s.snapshot_id,
+                timestamp_ms: s.timestamp_ms,
+                parent_snapshot_id: s.parent_snapshot_id,
+                operation: s.summary.get("operation").cloned().unwrap_or_default(),
+                summary: s.summary.clone(),
+            })
+            .collect();
+        
+        let partition_spec = iceberg_metadata.partition_specs.get(&iceberg_metadata.default_spec_id).cloned();
+        let sort_order = iceberg_metadata.sort_orders.get(&iceberg_metadata.default_sort_order_id).cloned();
+        
+        Ok(TableMetadata {
+            table_id: iceberg_metadata.table_id.clone(),
+            table_name: iceberg_metadata.table_name.clone(),
+            namespace: iceberg_metadata.namespace.clone(),
+            current_snapshot_id: iceberg_metadata.current_snapshot_id,
+            snapshots,
+            partition_spec,
+            sort_order,
+            properties: iceberg_metadata.properties.clone(),
+            created_at: iceberg_metadata.created_at,
+            updated_at: iceberg_metadata.updated_at,
         })
     }
     
     /// 加载文件清单条目
-    fn load_manifest_entries(&self, table_path: &str, _snapshot: &IcebergSnapshot) -> Result<Vec<ManifestEntry>> {
-        // 这里应该从manifest文件中读取真正的文件清单
-        // 为了简化，我们返回一些模拟的清单条目
+    fn load_manifest_entries(&self, table_path: &str, snapshot: &IcebergSnapshot) -> Result<Vec<ManifestEntry>> {
         let mut entries = Vec::new();
         
-        for i in 0..5 {
-            let mut partition_values = HashMap::new();
-            partition_values.insert("year".to_string(), "2023".to_string());
-            partition_values.insert("month".to_string(), format!("{:02}", i + 1));
+        // 读取manifest list文件
+        let manifest_list_path = Path::new(table_path).join(&snapshot.manifest_list);
+        if !manifest_list_path.exists() {
+            return Err(anyhow::anyhow!("Manifest list not found: {:?}", manifest_list_path));
+        }
+        
+        // 解析manifest list文件
+        let manifest_list_entries = self.parse_manifest_list_file(&manifest_list_path)?;
+        
+        // 遍历每个manifest文件
+        for manifest_list_entry in manifest_list_entries {
+            let manifest_path = Path::new(table_path).join(&manifest_list_entry.manifest_path);
+            if manifest_path.exists() {
+                match self.parse_manifest_file(&manifest_path) {
+                    Ok(manifest_entries) => {
+                        entries.extend(manifest_entries);
+                    },
+                    Err(e) => {
+                        warn!("Failed to parse manifest file {:?}: {}", manifest_path, e);
+                    }
+                }
+            } else {
+                warn!("Manifest file not found: {:?}", manifest_path);
+            }
+        }
+        
+        Ok(entries)
+    }
+    
+    /// 解析manifest list文件
+    fn parse_manifest_list_file(&self, manifest_list_path: &Path) -> Result<Vec<AvroManifestListEntry>> {
+        let file = File::open(manifest_list_path)?;
+        let reader = Reader::new(file)?;
+        let mut entries = Vec::new();
+        
+        for value in reader {
+            let value = value?;
+            let entry: AvroManifestListEntry = from_value(&value)?;
+            entries.push(entry);
+        }
+        
+        Ok(entries)
+    }
+    
+    /// 解析manifest文件
+    fn parse_manifest_file(&self, manifest_path: &Path) -> Result<Vec<ManifestEntry>> {
+        let file = File::open(manifest_path)?;
+        let reader = Reader::new(file)?;
+        let mut entries = Vec::new();
+        
+        for value in reader {
+            let value = value?;
+            let avro_entry: AvroManifestEntry = from_value(&value)?;
             
-            entries.push(ManifestEntry {
-                file_path: format!("{}/data/year=2023/month={:02}/part-{}.parquet", 
-                                 table_path, i + 1, i),
-                file_format: "parquet".to_string(),
-                partition_values,
-                file_size_bytes: 2 * 1024 * 1024, // 2MB
-                record_count: 2000,
-                column_sizes: HashMap::from([
-                    ("id".to_string(), 8000),
-                    ("name".to_string(), 12000),
-                    ("value".to_string(), 16000),
-                ]),
-                value_counts: HashMap::from([
-                    ("id".to_string(), 2000),
-                    ("name".to_string(), 2000),
-                    ("value".to_string(), 2000),
-                ]),
-                null_value_counts: HashMap::from([
-                    ("id".to_string(), 0),
-                    ("name".to_string(), 10),
-                    ("value".to_string(), 5),
-                ]),
-                lower_bounds: HashMap::from([
-                    ("id".to_string(), vec![0, 0, 0, 1]), // 1
-                    ("year".to_string(), "2023".as_bytes().to_vec()),
-                ]),
-                upper_bounds: HashMap::from([
-                    ("id".to_string(), vec![0, 0, 7, 208]), // 2000
-                    ("year".to_string(), "2023".as_bytes().to_vec()),
-                ]),
-            });
+            // 只处理ADDED状态的文件
+            if avro_entry.status == 1 { // 1 = ADDED
+                let data_file = avro_entry.data_file;
+                
+                // 转换列大小
+                let mut column_sizes = HashMap::new();
+                if let Some(sizes) = data_file.column_sizes {
+                    for (col, size) in sizes {
+                        column_sizes.insert(col, size as u64);
+                    }
+                }
+                
+                // 转换值计数
+                let mut value_counts = HashMap::new();
+                if let Some(counts) = data_file.value_counts {
+                    for (col, count) in counts {
+                        value_counts.insert(col, count as u64);
+                    }
+                }
+                
+                // 转换null值计数
+                let mut null_value_counts = HashMap::new();
+                if let Some(null_counts) = data_file.null_value_counts {
+                    for (col, count) in null_counts {
+                        null_value_counts.insert(col, count as u64);
+                    }
+                }
+                
+                // 转换下界
+                let mut lower_bounds = HashMap::new();
+                if let Some(bounds) = data_file.lower_bounds {
+                    for (col, bound) in bounds {
+                        lower_bounds.insert(col, bound);
+                    }
+                }
+                
+                // 转换上界
+                let mut upper_bounds = HashMap::new();
+                if let Some(bounds) = data_file.upper_bounds {
+                    for (col, bound) in bounds {
+                        upper_bounds.insert(col, bound);
+                    }
+                }
+                
+                // 转换split offsets
+                let split_offsets = data_file.split_offsets.unwrap_or_default();
+                
+                let entry = ManifestEntry {
+                    file_path: data_file.file_path,
+                    file_format: data_file.file_format,
+                    partition_values: data_file.partition,
+                    file_size_bytes: data_file.file_size_in_bytes as u64,
+                    record_count: data_file.record_count as u64,
+                    column_sizes,
+                    value_counts,
+                    null_value_counts,
+                    lower_bounds,
+                    upper_bounds,
+                    key_metadata: data_file.key_metadata,
+                    split_offsets,
+                    sort_order_id: data_file.sort_order_id,
+                };
+                
+                entries.push(entry);
+            }
         }
         
         Ok(entries)
     }
     
     /// 构建表Schema
-    fn build_table_schema(&self) -> Result<Schema> {
-        // 这里应该从表元数据中构建真正的Schema
-        // 为了简化，我们返回一个模拟的Schema
-        let fields = vec![
-            Field::new("id", DataType::Int32, false),
-            Field::new("name", DataType::Utf8, true),
-            Field::new("value", DataType::Float64, true),
-            Field::new("year", DataType::Int32, false),
-            Field::new("month", DataType::Int32, false),
-        ];
-        
-        Ok(Schema::new(fields))
+    fn build_table_schema(&self, iceberg_metadata: &IcebergTableMetadata) -> Result<Schema> {
+        if let Some(schema) = iceberg_metadata.schemas.get(&iceberg_metadata.current_schema_id) {
+            Ok(schema.clone())
+        } else {
+            Err(anyhow::anyhow!("Schema not found for ID: {}", iceberg_metadata.current_schema_id))
+        }
     }
     
-    /// 应用Iceberg特定的谓词下推
-    fn apply_iceberg_predicate_pushdown(&self) -> Result<u64> {
-        if self.predicates.is_empty() {
-            return Ok(0);
+    /// 读取Parquet文件
+    fn read_parquet_file(&self, entry: &ManifestEntry) -> Result<Vec<RecordBatch>> {
+        let file_path = Path::new(&entry.file_path);
+        if !file_path.exists() {
+            return Err(anyhow::anyhow!("Parquet file not found: {:?}", file_path));
         }
         
-        debug!("Applying Iceberg predicate pushdown with {} predicates", self.predicates.len());
+        let file = File::open(file_path)?;
+        let mut arrow_reader = ParquetRecordBatchReaderBuilder::try_new(file)?
+            .build()?;
         
-        let mut filtered_files = 0;
-        let original_count = self.manifest_entries.len();
-        
-        for predicate in &self.predicates {
-            let filtered = Self::apply_predicate_to_manifest(predicate, &self.manifest_entries)?;
-            filtered_files += filtered;
+        let mut batches = Vec::new();
+        while let Some(batch) = arrow_reader.next() {
+            let batch = batch?;
+            batches.push(batch);
         }
         
-        info!("Predicate pushdown filtered {} out of {} files", filtered_files, original_count);
-        Ok(filtered_files)
+        Ok(batches)
+    }
+}
+
+impl FormatAdapter for IcebergAdapter {
+    fn open_table(&mut self, table_path: &str) -> Result<()> {
+        self.table_path = table_path.to_string();
+        self.initialize_iceberg_table(table_path)
     }
     
-    /// 将谓词应用到文件清单
-    fn apply_predicate_to_manifest(predicate: &UnifiedPredicate, manifest_entries: &[ManifestEntry]) -> Result<u64> {
-        let mut filtered_count = 0;
+    fn get_metadata(&self) -> Result<TableMetadata> {
+        self.table_metadata.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Table not opened"))
+            .map(|m| m.clone())
+    }
+    
+    fn get_statistics(&self) -> Result<TableStatistics> {
+        let total_files = self.manifest_entries.len() as u64;
+        let total_records = self.manifest_entries.iter()
+            .map(|e| e.record_count)
+            .sum();
+        let total_size = self.manifest_entries.iter()
+            .map(|e| e.file_size_bytes)
+            .sum();
+        let avg_file_size = if total_files > 0 { total_size / total_files } else { 0 };
         
-        for entry in manifest_entries {
-            if !Self::evaluate_predicate_on_entry(predicate, entry)? {
+        Ok(TableStatistics {
+            total_files,
+            total_records,
+            total_size_bytes: total_size,
+            avg_file_size_bytes: avg_file_size,
+            avg_records_per_file: if total_files > 0 { total_records / total_files } else { 0 },
+            partition_count: self.manifest_entries.iter()
+                .map(|e| e.partition_values.len())
+                .max()
+                .unwrap_or(0) as u64,
+            snapshot_count: self.iceberg_metadata.as_ref()
+                .map(|m| m.snapshots.len() as u64)
+                .unwrap_or(0),
+        })
+    }
+    
+    fn apply_predicate_pushdown(&mut self, predicates: &[UnifiedPredicate]) -> Result<u64> {
+        self.predicates = predicates.to_vec();
+        
+        let mut filtered_count = 0u64;
+        for entry in &self.manifest_entries {
+            let mut matches = true;
+            for predicate in predicates {
+                if !self.evaluate_predicate_on_entry(predicate, entry)? {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
                 filtered_count += 1;
             }
         }
         
+        info!("Predicate pushdown filtered {} files from {} total", 
+              filtered_count, self.manifest_entries.len());
+        
         Ok(filtered_count)
     }
     
-    /// 在文件清单条目上评估谓词
-    fn evaluate_predicate_on_entry(predicate: &UnifiedPredicate, entry: &ManifestEntry) -> Result<bool> {
+    fn apply_column_projection(&mut self, projection: &ColumnProjection) -> Result<()> {
+        self.column_projection = Some(projection.clone());
+        info!("Applied column projection: {:?}", projection.columns);
+        Ok(())
+    }
+    
+    fn apply_partition_pruning(&mut self, pruning: &PartitionPruningInfo) -> Result<u64> {
+        self.partition_pruning = Some(pruning.clone());
+        
+        let mut pruned_count = 0u64;
+        for entry in &self.manifest_entries {
+            if self.matches_partition_pruning(entry, pruning)? {
+                pruned_count += 1;
+            }
+        }
+        
+        info!("Partition pruning kept {} files from {} total", 
+              pruned_count, self.manifest_entries.len());
+        
+        Ok(pruned_count)
+    }
+    
+    fn apply_time_travel(&mut self, time_travel: &TimeTravelConfig) -> Result<()> {
+        self.time_travel = Some(time_travel.clone());
+        
+        if let Some(snapshot_id) = time_travel.snapshot_id {
+            if let Some(iceberg_metadata) = &self.iceberg_metadata {
+                if let Some(snapshot) = iceberg_metadata.snapshots.iter()
+                    .find(|s| s.snapshot_id == snapshot_id) {
+                    self.current_snapshot = Some(snapshot.clone());
+                    self.current_snapshot_id = Some(snapshot_id);
+                    info!("Applied time travel to snapshot: {}", snapshot_id);
+                } else {
+                    return Err(anyhow::anyhow!("Snapshot not found: {}", snapshot_id));
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    fn apply_incremental_read(&mut self, incremental: &IncrementalReadConfig) -> Result<()> {
+        self.incremental_read = Some(incremental.clone());
+        info!("Applied incremental read configuration");
+        Ok(())
+    }
+    
+    fn read_data(&mut self) -> Result<Vec<RecordBatch>> {
+        let mut all_batches = Vec::new();
+        
+        for entry in &self.manifest_entries {
+            match self.read_parquet_file(entry) {
+                Ok(batches) => {
+                    all_batches.extend(batches);
+                },
+                Err(e) => {
+                    warn!("Failed to read file {}: {}", entry.file_path, e);
+                }
+            }
+        }
+        
+        // 应用列投影
+        if let Some(projection) = &self.column_projection {
+            all_batches = self.apply_column_projection_to_batches(all_batches, projection)?;
+        }
+        
+        info!("Read {} batches from {} files", all_batches.len(), self.manifest_entries.len());
+        Ok(all_batches)
+    }
+    
+    fn get_schema(&self) -> Result<Schema> {
+        self.table_schema.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Table not opened"))
+            .map(|s| s.clone())
+    }
+}
+
+// 辅助方法实现
+impl IcebergAdapter {
+    /// 评估谓词
+    fn evaluate_predicate_on_entry(&self, predicate: &UnifiedPredicate, entry: &ManifestEntry) -> Result<bool> {
         match predicate {
             UnifiedPredicate::Equal { column, value } => {
-                Self::evaluate_equality_predicate(column, value, entry)
+                self.evaluate_equality_predicate(column, value, entry)
             },
             UnifiedPredicate::GreaterThan { column, value } => {
-                Self::evaluate_range_predicate(column, value, ">", entry)
+                self.evaluate_range_predicate(column, value, ">", entry)
             },
             UnifiedPredicate::LessThan { column, value } => {
-                Self::evaluate_range_predicate(column, value, "<", entry)
+                self.evaluate_range_predicate(column, value, "<", entry)
             },
             UnifiedPredicate::Between { column, min, max } => {
-                Self::evaluate_between_predicate(column, min, max, entry)
+                self.evaluate_between_predicate(column, min, max, entry)
             },
             UnifiedPredicate::In { column, values } => {
-                Self::evaluate_in_predicate(column, values, entry)
+                self.evaluate_in_predicate(column, values, entry)
             },
             UnifiedPredicate::IsNull { column } => {
-                Self::evaluate_null_predicate(column, true, entry)
+                self.evaluate_null_predicate(column, true, entry)
             },
             UnifiedPredicate::IsNotNull { column } => {
-                Self::evaluate_null_predicate(column, false, entry)
+                self.evaluate_null_predicate(column, false, entry)
             },
             UnifiedPredicate::Like { column, pattern } => {
-                Self::evaluate_like_predicate(column, pattern, entry)
+                self.evaluate_like_predicate(column, pattern, entry)
             },
         }
     }
     
     /// 评估等值谓词
-    fn evaluate_equality_predicate(column: &str, value: &str, entry: &ManifestEntry) -> Result<bool> {
+    fn evaluate_equality_predicate(&self, column: &str, value: &str, entry: &ManifestEntry) -> Result<bool> {
         // 检查分区值
         if let Some(partition_value) = entry.partition_values.get(column) {
             return Ok(partition_value == value);
         }
         
         // 检查边界值
-        if let Some(_lower_bound) = entry.lower_bounds.get(column) {
-            if let Some(_upper_bound) = entry.upper_bounds.get(column) {
-                // 这里应该实现真正的边界值比较
-                // 为了简化，我们假设值在范围内
-                return Ok(true);
-            }
+        if let (Some(lower), Some(upper)) = (entry.lower_bounds.get(column), entry.upper_bounds.get(column)) {
+            let value_bytes = value.as_bytes();
+            return Ok(value_bytes >= lower.as_slice() && value_bytes <= upper.as_slice());
         }
         
-        // 如果无法确定，保守地返回true
-        Ok(true)
+        Ok(true) // 如果无法确定，返回true
     }
     
     /// 评估范围谓词
-    fn evaluate_range_predicate(column: &str, value: &str, op: &str, entry: &ManifestEntry) -> Result<bool> {
+    fn evaluate_range_predicate(&self, column: &str, value: &str, op: &str, entry: &ManifestEntry) -> Result<bool> {
         // 检查分区值
         if let Some(partition_value) = entry.partition_values.get(column) {
-            return Self::compare_partition_values(partition_value, value, op);
+            return Ok(self.compare_partition_values(partition_value, value, op)?);
         }
         
         // 检查边界值
-        if let Some(_lower_bound) = entry.lower_bounds.get(column) {
-            if let Some(_upper_bound) = entry.upper_bounds.get(column) {
-                return Self::compare_with_bounds(value, &[], &[], op);
-            }
+        if let (Some(lower), Some(upper)) = (entry.lower_bounds.get(column), entry.upper_bounds.get(column)) {
+            let value_bytes = value.as_bytes();
+            return Ok(match op {
+                ">" => value_bytes > lower.as_slice(),
+                "<" => value_bytes < upper.as_slice(),
+                ">=" => value_bytes >= lower.as_slice(),
+                "<=" => value_bytes <= upper.as_slice(),
+                _ => true,
+            });
         }
         
-        // 如果无法确定，保守地返回true
         Ok(true)
     }
     
-    /// 评估BETWEEN谓词
-    fn evaluate_between_predicate(column: &str, min: &str, max: &str, entry: &ManifestEntry) -> Result<bool> {
+    /// 评估Between谓词
+    fn evaluate_between_predicate(&self, column: &str, min: &str, max: &str, entry: &ManifestEntry) -> Result<bool> {
         // 检查分区值
         if let Some(partition_value) = entry.partition_values.get(column) {
             return Ok(partition_value.as_str() >= min && partition_value.as_str() <= max);
         }
         
         // 检查边界值
-        if let Some(_lower_bound) = entry.lower_bounds.get(column) {
-            if let Some(_upper_bound) = entry.upper_bounds.get(column) {
-                // 这里应该实现真正的边界值比较
-                // 为了简化，我们假设值在范围内
-                return Ok(true);
-            }
+        if let (Some(lower), Some(upper)) = (entry.lower_bounds.get(column), entry.upper_bounds.get(column)) {
+            let min_bytes = min.as_bytes();
+            let max_bytes = max.as_bytes();
+            return Ok(min_bytes <= upper.as_slice() && max_bytes >= lower.as_slice());
         }
         
         Ok(true)
     }
     
-    /// 评估IN谓词
-    fn evaluate_in_predicate(column: &str, values: &[String], entry: &ManifestEntry) -> Result<bool> {
+    /// 评估In谓词
+    fn evaluate_in_predicate(&self, column: &str, values: &[String], entry: &ManifestEntry) -> Result<bool> {
         // 检查分区值
         if let Some(partition_value) = entry.partition_values.get(column) {
             return Ok(values.contains(partition_value));
         }
         
-        // 如果无法确定，保守地返回true
+        // 对于边界值，如果任何值在范围内就返回true
+        if let (Some(lower), Some(upper)) = (entry.lower_bounds.get(column), entry.upper_bounds.get(column)) {
+            for value in values {
+                let value_bytes = value.as_bytes();
+                if value_bytes >= lower.as_slice() && value_bytes <= upper.as_slice() {
+                    return Ok(true);
+                }
+            }
+        }
+        
         Ok(true)
     }
     
-    /// 评估NULL谓词
-    fn evaluate_null_predicate(column: &str, is_null: bool, entry: &ManifestEntry) -> Result<bool> {
-        // 检查空值计数
+    /// 评估Null谓词
+    fn evaluate_null_predicate(&self, column: &str, is_null: bool, entry: &ManifestEntry) -> Result<bool> {
         if let Some(null_count) = entry.null_value_counts.get(column) {
             if is_null {
                 return Ok(*null_count > 0);
             } else {
-                return Ok(*null_count == 0);
+                return Ok(*null_count < entry.record_count);
             }
         }
         
-        // 如果无法确定，保守地返回true
         Ok(true)
     }
     
-    /// 评估LIKE谓词
-    fn evaluate_like_predicate(column: &str, pattern: &str, entry: &ManifestEntry) -> Result<bool> {
+    /// 评估Like谓词
+    fn evaluate_like_predicate(&self, column: &str, pattern: &str, entry: &ManifestEntry) -> Result<bool> {
         // 检查分区值
         if let Some(partition_value) = entry.partition_values.get(column) {
-            return Ok(Self::matches_like_pattern(partition_value, pattern));
+            return Ok(self.matches_like_pattern(partition_value, pattern));
         }
         
-        // 如果无法确定，保守地返回true
+        // 对于边界值，如果模式可能匹配就返回true
         Ok(true)
     }
     
     /// 比较分区值
-    fn compare_partition_values(partition_value: &str, value: &str, op: &str) -> Result<bool> {
-        match op {
-            ">" => Ok(partition_value > value),
-            ">=" => Ok(partition_value >= value),
-            "<" => Ok(partition_value < value),
-            "<=" => Ok(partition_value <= value),
-            _ => Ok(true),
-        }
+    fn compare_partition_values(&self, partition_value: &str, value: &str, op: &str) -> Result<bool> {
+        Ok(match op {
+            ">" => partition_value > value,
+            "<" => partition_value < value,
+            ">=" => partition_value >= value,
+            "<=" => partition_value <= value,
+            _ => false,
+        })
     }
     
-    /// 与边界值比较
-    fn compare_with_bounds(_value: &str, _lower_bound: &[u8], _upper_bound: &[u8], _op: &str) -> Result<bool> {
-        // 这里应该实现真正的边界值比较
-        // 为了简化，我们假设值在范围内
-        Ok(true)
-    }
-    
-    /// 匹配LIKE模式
-    fn matches_like_pattern(text: &str, pattern: &str) -> bool {
-        // 简单的LIKE模式匹配实现
-        // 支持 % 和 _ 通配符
+    /// 匹配Like模式
+    fn matches_like_pattern(&self, text: &str, pattern: &str) -> bool {
         let mut text_chars = text.chars().peekable();
         let mut pattern_chars = pattern.chars().peekable();
         
@@ -500,7 +1012,7 @@ impl IcebergAdapter {
                     let remaining_pattern: String = pattern_chars.collect();
                     while text_chars.peek().is_some() {
                         let remaining_text: String = text_chars.clone().collect();
-                        if Self::matches_like_pattern(&remaining_text, &remaining_pattern) {
+                        if self.matches_like_pattern(&remaining_text, &remaining_pattern) {
                             return true;
                         }
                         text_chars.next();
@@ -512,7 +1024,7 @@ impl IcebergAdapter {
                     pattern_chars.next();
                 },
                 _ => {
-                    if *text_char == *pattern_char {
+                    if text_char == pattern_char {
                         text_chars.next();
                         pattern_chars.next();
                     } else {
@@ -525,512 +1037,49 @@ impl IcebergAdapter {
         text_chars.peek().is_none() && pattern_chars.peek().is_none()
     }
     
-    /// 应用Iceberg特定的分区剪枝
-    fn apply_iceberg_partition_pruning(&self) -> Result<u64> {
-        if let Some(ref pruning) = self.partition_pruning {
-            debug!("Applying Iceberg partition pruning for columns: {:?}", pruning.partition_columns);
-            
-            let mut pruned_files = 0;
-            let original_count = self.manifest_entries.len();
-            
-            for entry in &self.manifest_entries {
-                if !Self::matches_partition_pruning(entry, pruning)? {
-                    pruned_files += 1;
+    /// 匹配分区剪枝
+    fn matches_partition_pruning(&self, entry: &ManifestEntry, pruning: &PartitionPruningInfo) -> Result<bool> {
+        for (column, value) in &pruning.partition_values {
+            if let Some(partition_value) = entry.partition_values.get(column) {
+                if partition_value != value {
+                    return Ok(false);
                 }
             }
-            
-            info!("Partition pruning filtered {} out of {} files", pruned_files, original_count);
-            Ok(pruned_files as u64)
-        } else {
-            Ok(0)
         }
+        Ok(true)
     }
     
-    /// 检查文件清单条目是否匹配分区剪枝条件
-    fn matches_partition_pruning(entry: &ManifestEntry, pruning: &PartitionPruningInfo) -> Result<bool> {
-        // 检查每个分区列是否匹配
-        for (column, expected_value) in &pruning.partition_values {
-            if let Some(actual_value) = entry.partition_values.get(column) {
-                if actual_value != expected_value {
-                    return Ok(false); // 分区值不匹配，剪枝此文件
-                }
-            } else {
-                // 如果文件没有此分区列的值，保守地保留
-                continue;
-            }
-        }
-        
-        // 注意：PartitionPruningInfo 没有 partition_ranges 字段
-        // 这里只检查 partition_values
-        
-        Ok(true) // 所有条件都匹配
-    }
-    
-    /// 应用Iceberg时间旅行
-    fn apply_iceberg_time_travel(&mut self, time_travel: &TimeTravelConfig) -> Result<()> {
-        debug!("Applying Iceberg time travel: {:?}", time_travel);
-        
-        let target_snapshot_id = if let Some(snapshot_id) = time_travel.snapshot_id {
-            info!("Time travel to snapshot: {}", snapshot_id);
-            Some(snapshot_id)
-        } else if let Some(timestamp_ms) = time_travel.timestamp_ms {
-            // 根据时间戳查找对应的快照
-            let snapshot_id = self.find_snapshot_by_timestamp(timestamp_ms)?;
-            info!("Time travel to timestamp: {} (snapshot: {})", timestamp_ms, snapshot_id);
-            Some(snapshot_id)
-        } else if let Some(ref branch) = time_travel.branch {
-            // 根据分支查找快照
-            let snapshot_id = self.find_snapshot_by_branch(branch)?;
-            info!("Time travel to branch: {} (snapshot: {})", branch, snapshot_id);
-            Some(snapshot_id)
-        } else if let Some(ref tag) = time_travel.tag {
-            // 根据标签查找快照
-            let snapshot_id = self.find_snapshot_by_tag(tag)?;
-            info!("Time travel to tag: {} (snapshot: {})", tag, snapshot_id);
-            Some(snapshot_id)
-        } else {
-            None
-        };
-        
-        if let Some(snapshot_id) = target_snapshot_id {
-            self.current_snapshot_id = Some(snapshot_id);
-            // 重新加载快照和文件清单
-            self.reload_snapshot_data(snapshot_id)?;
-        }
-        
-        Ok(())
-    }
-    
-    /// 根据时间戳查找快照
-    fn find_snapshot_by_timestamp(&self, timestamp_ms: i64) -> Result<i64> {
-        // 这里应该从元数据中查找最接近指定时间戳的快照
-        // 为了简化，我们返回一个模拟的快照ID
-        if timestamp_ms < 1703001600000 {
-            Ok(12340) // 较早的快照
-        } else {
-            Ok(12345) // 当前快照
-        }
-    }
-    
-    /// 根据分支查找快照
-    fn find_snapshot_by_branch(&self, branch: &str) -> Result<i64> {
-        // 这里应该从分支元数据中查找对应的快照
-        // 为了简化，我们返回一个模拟的快照ID
-        match branch {
-            "main" => Ok(12345),
-            "dev" => Ok(12344),
-            _ => Ok(12343),
-        }
-    }
-    
-    /// 根据标签查找快照
-    fn find_snapshot_by_tag(&self, tag: &str) -> Result<i64> {
-        // 这里应该从标签元数据中查找对应的快照
-        // 为了简化，我们返回一个模拟的快照ID
-        match tag {
-            "v1.0" => Ok(12340),
-            "v1.1" => Ok(12342),
-            _ => Ok(12345),
-        }
-    }
-    
-    /// 重新加载快照数据
-    fn reload_snapshot_data(&mut self, snapshot_id: i64) -> Result<()> {
-        // 这里应该重新加载指定快照的文件清单
-        // 为了简化，我们模拟重新加载
-        info!("Reloading snapshot data for snapshot: {}", snapshot_id);
-        
-        // 更新当前快照
-        self.current_snapshot = Some(IcebergSnapshot {
-            snapshot_id,
-            timestamp_ms: 1703001600000,
-            parent_snapshot_id: Some(snapshot_id - 1),
-            manifest_list: format!("{}/metadata/snap-{}.avro", self.table_path, snapshot_id),
-            summary: HashMap::from([
-                ("added-records".to_string(), "1000".to_string()),
-                ("added-files".to_string(), "5".to_string()),
-            ]),
-            schema_id: 1,
-        });
-        
-        // 重新加载文件清单
-        if let Some(ref snapshot) = self.current_snapshot {
-            self.manifest_entries = self.load_manifest_entries(&self.table_path, snapshot)?;
-        }
-        
-        Ok(())
-    }
-    
-    /// 应用Iceberg增量读取
-    fn apply_iceberg_incremental_read(&self, incremental: &IncrementalReadConfig) -> Result<()> {
-        debug!("Applying Iceberg incremental read: {:?}", incremental);
-        
-        if let (Some(start_id), Some(end_id)) = (incremental.start_snapshot_id, incremental.end_snapshot_id) {
-            info!("Incremental read from snapshot {} to {}", start_id, end_id);
-            self.load_incremental_data_by_snapshot(start_id, end_id)?;
-        } else if let (Some(start_ts), Some(end_ts)) = (incremental.start_timestamp_ms, incremental.end_timestamp_ms) {
-            info!("Incremental read from timestamp {} to {}", start_ts, end_ts);
-            self.load_incremental_data_by_timestamp(start_ts, end_ts)?;
-        }
-        
-        Ok(())
-    }
-    
-    /// 根据快照ID范围加载增量数据
-    fn load_incremental_data_by_snapshot(&self, start_id: i64, end_id: i64) -> Result<()> {
-        info!("Loading incremental data between snapshots {} and {}", start_id, end_id);
-        
-        // 这里应该实现真正的增量数据加载逻辑
-        // 包括：
-        // 1. 查找指定范围内的所有快照
-        // 2. 加载每个快照的文件清单
-        // 3. 合并文件清单，去重
-        // 4. 过滤出新增或修改的文件
-        
-        let mut incremental_files = Vec::new();
-        
-        for snapshot_id in start_id..=end_id {
-            let snapshot_files = self.load_files_for_snapshot(snapshot_id)?;
-            incremental_files.extend(snapshot_files);
-        }
-        
-        info!("Found {} files in incremental range", incremental_files.len());
-        Ok(())
-    }
-    
-    /// 根据时间戳范围加载增量数据
-    fn load_incremental_data_by_timestamp(&self, start_ts: i64, end_ts: i64) -> Result<()> {
-        info!("Loading incremental data between timestamps {} and {}", start_ts, end_ts);
-        
-        // 这里应该实现基于时间戳的增量数据加载
-        // 包括：
-        // 1. 查找指定时间范围内的所有快照
-        // 2. 加载文件清单
-        // 3. 过滤出在时间范围内的文件
-        
-        let mut incremental_files = Vec::new();
-        
-        // 模拟查找时间范围内的快照
-        let snapshots = self.find_snapshots_in_timerange(start_ts, end_ts)?;
-        
-        for snapshot in snapshots {
-            let snapshot_files = self.load_files_for_snapshot(snapshot.snapshot_id)?;
-            incremental_files.extend(snapshot_files);
-        }
-        
-        info!("Found {} files in timestamp range", incremental_files.len());
-        Ok(())
-    }
-    
-    /// 为指定快照加载文件
-    fn load_files_for_snapshot(&self, snapshot_id: i64) -> Result<Vec<ManifestEntry>> {
-        // 这里应该从manifest文件中加载真正的文件清单
-        // 为了简化，我们返回一些模拟的文件
-        let mut files = Vec::new();
-        
-        for i in 0..3 {
-            let mut partition_values = HashMap::new();
-            partition_values.insert("year".to_string(), "2023".to_string());
-            partition_values.insert("month".to_string(), format!("{:02}", i + 1));
-            
-            files.push(ManifestEntry {
-                file_path: format!("{}/data/year=2023/month={:02}/part-{}-snap-{}.parquet", 
-                                 self.table_path, i + 1, i, snapshot_id),
-                file_format: "parquet".to_string(),
-                partition_values,
-                file_size_bytes: 2 * 1024 * 1024, // 2MB
-                record_count: 2000,
-                column_sizes: HashMap::new(),
-                value_counts: HashMap::new(),
-                null_value_counts: HashMap::new(),
-                lower_bounds: HashMap::new(),
-                upper_bounds: HashMap::new(),
-            });
-        }
-        
-        Ok(files)
-    }
-    
-    /// 查找时间范围内的快照
-    fn find_snapshots_in_timerange(&self, start_ts: i64, _end_ts: i64) -> Result<Vec<IcebergSnapshot>> {
-        // 这里应该从元数据中查找真正的快照
-        // 为了简化，我们返回一些模拟的快照
-        let mut snapshots = Vec::new();
-        
-        for i in 0..3 {
-            snapshots.push(IcebergSnapshot {
-                snapshot_id: 12340 + i,
-                timestamp_ms: start_ts + (i * 1000),
-                parent_snapshot_id: if i == 0 { None } else { Some(12339 + i) },
-                manifest_list: format!("{}/metadata/snap-{}.avro", self.table_path, 12340 + i),
-                summary: HashMap::from([
-                    ("added-records".to_string(), "1000".to_string()),
-                    ("added-files".to_string(), "3".to_string()),
-                ]),
-                schema_id: 1,
-            });
-        }
-        
-        Ok(snapshots)
-    }
-    
-    /// 计算分区数量
-    fn calculate_partition_count(manifest_entries: &[ManifestEntry]) -> u64 {
-        let mut unique_partitions = std::collections::HashSet::new();
-        
-        for entry in manifest_entries {
-            let partition_key = entry.partition_values.iter()
-                .map(|(k, v)| format!("{}={}", k, v))
-                .collect::<Vec<_>>()
-                .join(",");
-            unique_partitions.insert(partition_key);
-        }
-        
-        unique_partitions.len() as u64
-    }
-    
-    /// 计算快照数量
-    fn calculate_snapshot_count(table_metadata: &Option<TableMetadata>) -> u64 {
-        // 这里应该从元数据中计算真正的快照数量
-        // 为了简化，我们返回一个估算值
-        if let Some(ref metadata) = table_metadata {
-            metadata.snapshots.len() as u64
-        } else {
-            1
-        }
-    }
-    
-    /// 过滤文件清单
-    fn filter_manifest_entries(
-        manifest_entries: &[ManifestEntry],
-        predicates: &[UnifiedPredicate],
-        partition_pruning: &Option<PartitionPruningInfo>,
-    ) -> Result<Vec<ManifestEntry>> {
-        let mut filtered = Vec::new();
-        
-        for entry in manifest_entries {
-            let mut should_include = true;
-            
-            // 应用谓词过滤
-            for predicate in predicates {
-                if !Self::evaluate_predicate_on_entry(predicate, entry)? {
-                    should_include = false;
-                    break;
-                }
-            }
-            
-            // 应用分区剪枝
-            if should_include {
-                if let Some(ref pruning) = partition_pruning {
-                    if !Self::matches_partition_pruning(entry, pruning)? {
-                        should_include = false;
-                    }
-                }
-            }
-            
-            if should_include {
-                filtered.push(entry.clone());
-            }
-        }
-        
-        Ok(filtered)
-    }
-    
-    /// 读取Parquet文件
-    fn read_parquet_file(entry: &ManifestEntry) -> Result<Vec<RecordBatch>> {
-        debug!("Reading Parquet file: {}", entry.file_path);
-        
-        // 这里应该实现真正的Parquet文件读取
-        // 为了简化，我们返回一些模拟的批次
-        let mut batches = Vec::new();
-        
-        // 模拟读取文件并生成批次
-        for i in 0..2 {
-            let batch = Self::create_mock_batch(entry, i)?;
-            batches.push(batch);
-        }
-        
-        Ok(batches)
-    }
-    
-    /// 创建模拟批次
-    fn create_mock_batch(_entry: &ManifestEntry, _batch_index: usize) -> Result<RecordBatch> {
-        use arrow::array::*;
-        
-        // 创建模拟数据
-        let id_array = Int32Array::from(vec![1, 2, 3, 4, 5]);
-        let name_array = StringArray::from(vec!["Alice", "Bob", "Charlie", "David", "Eve"]);
-        let value_array = Float64Array::from(vec![10.5, 20.3, 30.7, 40.1, 50.9]);
-        let year_array = Int32Array::from(vec![2023, 2023, 2023, 2023, 2023]);
-        let month_array = Int32Array::from(vec![1, 1, 1, 1, 1]);
-        
-        // 创建Schema
-        let fields = vec![
-            Field::new("id", DataType::Int32, false),
-            Field::new("name", DataType::Utf8, true),
-            Field::new("value", DataType::Float64, true),
-            Field::new("year", DataType::Int32, false),
-            Field::new("month", DataType::Int32, false),
-        ];
-        let schema = Schema::new(fields);
-        
-        let batch = RecordBatch::try_new(
-            Arc::new(schema),
-            vec![
-                Arc::new(id_array),
-                Arc::new(name_array),
-                Arc::new(value_array),
-                Arc::new(year_array),
-                Arc::new(month_array),
-            ],
-        )?;
-        
-        Ok(batch)
-    }
-    
-    /// 对批次应用列投影
-    fn apply_column_projection_to_batches(batches: Vec<RecordBatch>, projection: &ColumnProjection) -> Result<Vec<RecordBatch>> {
+    /// 应用列投影到批次
+    fn apply_column_projection_to_batches(&self, batches: Vec<RecordBatch>, projection: &ColumnProjection) -> Result<Vec<RecordBatch>> {
         let mut projected_batches = Vec::new();
         
         for batch in batches {
-            let projected_batch = Self::apply_column_projection_to_batch(&batch, projection)?;
+            let projected_batch = self.apply_column_projection_to_batch(&batch, projection)?;
             projected_batches.push(projected_batch);
         }
         
         Ok(projected_batches)
     }
     
-    /// 对单个批次应用列投影
-    fn apply_column_projection_to_batch(batch: &RecordBatch, projection: &ColumnProjection) -> Result<RecordBatch> {
+    /// 应用列投影到单个批次
+    fn apply_column_projection_to_batch(&self, batch: &RecordBatch, projection: &ColumnProjection) -> Result<RecordBatch> {
         let mut projected_columns = Vec::new();
         let mut projected_fields = Vec::new();
         
         for column_name in &projection.columns {
-            if let Some(column_index) = Self::find_column_index(&batch.schema(), column_name) {
+            if let Some(column_index) = self.find_column_index(&batch.schema(), column_name) {
                 projected_columns.push(batch.column(column_index).clone());
                 projected_fields.push(batch.schema().field(column_index).clone());
             }
         }
         
-        let projected_schema = Schema::new(projected_fields);
-        let projected_batch = RecordBatch::try_new(
-            Arc::new(projected_schema),
-            projected_columns,
-        )?;
-        
-        Ok(projected_batch)
+        let projected_schema = Arc::new(Schema::new(projected_fields));
+        RecordBatch::try_new(projected_schema, projected_columns)
+            .map_err(|e| anyhow::anyhow!("Failed to create projected batch: {}", e))
     }
     
     /// 查找列索引
-    fn find_column_index(schema: &Schema, column_name: &str) -> Option<usize> {
+    fn find_column_index(&self, schema: &Schema, column_name: &str) -> Option<usize> {
         schema.fields().iter().position(|field| field.name() == column_name)
-    }
-}
-
-impl FormatAdapter for IcebergAdapter {
-    fn open_table(&mut self, table_path: &str) -> Result<()> {
-        self.table_path = table_path.to_string();
-        self.initialize_iceberg_table(table_path)?;
-        Ok(())
-    }
-    
-    fn get_metadata(&self) -> Result<TableMetadata> {
-        self.table_metadata.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Table not opened"))
-            .map(|m| m.clone())
-    }
-    
-    fn get_statistics(&self) -> Result<TableStatistics> {
-        // 计算真实的统计信息
-        let total_files = self.manifest_entries.len() as u64;
-        let total_records: u64 = self.manifest_entries.iter().map(|e| e.record_count).sum();
-        let total_size_bytes: u64 = self.manifest_entries.iter().map(|e| e.file_size_bytes).sum();
-        
-        // 计算分区数量
-        let partition_count = Self::calculate_partition_count(&self.manifest_entries);
-        
-        // 计算快照数量
-        let snapshot_count = Self::calculate_snapshot_count(&self.table_metadata);
-        
-        // 计算平均文件大小
-        let avg_file_size_bytes = if total_files > 0 {
-            total_size_bytes / total_files
-        } else {
-            0
-        };
-        
-        // 计算平均每文件记录数
-        let avg_records_per_file = if total_files > 0 {
-            total_records / total_files
-        } else {
-            0
-        };
-        
-        Ok(TableStatistics {
-            total_files,
-            total_records,
-            total_size_bytes,
-            partition_count,
-            snapshot_count,
-            avg_file_size_bytes,
-            avg_records_per_file,
-        })
-    }
-    
-    fn apply_predicate_pushdown(&mut self, predicates: &[UnifiedPredicate]) -> Result<u64> {
-        self.predicates = predicates.to_vec();
-        self.apply_iceberg_predicate_pushdown()
-    }
-    
-    fn apply_column_projection(&mut self, projection: &ColumnProjection) -> Result<()> {
-        self.column_projection = Some(projection.clone());
-        debug!("Applied Iceberg column projection: {:?}", projection.columns);
-        Ok(())
-    }
-    
-    fn apply_partition_pruning(&mut self, pruning: &PartitionPruningInfo) -> Result<u64> {
-        self.partition_pruning = Some(pruning.clone());
-        self.apply_iceberg_partition_pruning()
-    }
-    
-    fn apply_time_travel(&mut self, time_travel: &TimeTravelConfig) -> Result<()> {
-        self.time_travel = Some(time_travel.clone());
-        self.apply_iceberg_time_travel(time_travel)
-    }
-    
-    fn apply_incremental_read(&mut self, incremental: &IncrementalReadConfig) -> Result<()> {
-        self.incremental_read = Some(incremental.clone());
-        self.apply_iceberg_incremental_read(incremental)
-    }
-    
-    fn read_data(&mut self) -> Result<Vec<RecordBatch>> {
-        debug!("Reading Iceberg data with snapshot ID: {:?}", self.current_snapshot_id);
-        
-        let mut batches = Vec::new();
-        
-        // 过滤文件清单
-        let filtered_entries = Self::filter_manifest_entries(&self.manifest_entries, &self.predicates, &self.partition_pruning)?;
-        
-        info!("Reading data from {} files", filtered_entries.len());
-        
-        // 读取每个文件
-        for entry in filtered_entries {
-            let file_batches = Self::read_parquet_file(&entry)?;
-            batches.extend(file_batches);
-        }
-        
-        // 应用列投影
-        if let Some(ref projection) = self.column_projection {
-            batches = Self::apply_column_projection_to_batches(batches, projection)?;
-        }
-        
-        info!("Successfully read {} batches", batches.len());
-        Ok(batches)
-    }
-    
-    fn get_schema(&self) -> Result<Schema> {
-        self.table_schema.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Table schema not available"))
-            .map(|s| s.clone())
     }
 }
