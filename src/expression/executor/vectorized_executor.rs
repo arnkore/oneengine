@@ -15,23 +15,30 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 向量化执行器
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供高效的向量化表达式执行
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use crate::expression::ast::Expression;
+use anyhow::Result;
+use arrow::array::ArrayRef;
+use arrow::record_batch::RecordBatch;
+use std::sync::Arc;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 向量化执行器实现
+pub struct VectorizedExecutorImpl;
+
+impl VectorizedExecutorImpl {
+    /// 创建新的向量化执行器
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// 执行表达式
+    pub fn execute(&self, _expression: &Expression, _batch: &RecordBatch) -> Result<ArrayRef> {
+        // TODO: 实现向量化执行
+        use arrow::array::*;
+        use arrow::datatypes::*;
+        Ok(Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef)
+    }
+}

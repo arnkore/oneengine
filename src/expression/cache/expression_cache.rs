@@ -15,23 +15,27 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 表达式缓存实现
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式编译结果的缓存功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use crate::expression::ast::Expression;
+use anyhow::Result;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 表达式缓存实现
+pub struct ExpressionCacheImpl {
+    // TODO: 实现表达式缓存
+}
+
+impl ExpressionCacheImpl {
+    /// 创建新的表达式缓存
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// 缓存表达式
+    pub fn cache_expression(&mut self, _expression: &Expression) -> Result<()> {
+        // TODO: 实现表达式缓存
+        Ok(())
+    }
+}

@@ -15,23 +15,32 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 表达式优化器模块
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式优化功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+pub mod constant_folding;
+pub mod expression_fusion;
+pub mod vectorization;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+use crate::expression::ast::Expression;
+use crate::expression::ExpressionEngineConfig;
+use anyhow::Result;
+
+/// 表达式优化器
+pub struct ExpressionOptimizer {
+    config: ExpressionEngineConfig,
+}
+
+impl ExpressionOptimizer {
+    /// 创建新的表达式优化器
+    pub fn new(config: ExpressionEngineConfig) -> Self {
+        Self { config }
+    }
+
+    /// 优化表达式
+    pub fn optimize(&self, expression: &Expression) -> Result<Expression> {
+        // TODO: 实现表达式优化
+        Ok(expression.clone())
+    }
+}

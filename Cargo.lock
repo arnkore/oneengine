@@ -3135,6 +3135,7 @@ dependencies = [
  "flate2",
  "futures",
  "hashbrown 0.14.5",
+ "hex",
  "iceberg",
  "jemalloc",
  "jemalloc-sys",

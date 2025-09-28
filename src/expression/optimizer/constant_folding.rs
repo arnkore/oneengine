@@ -15,23 +15,25 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 常量折叠优化
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 在编译时计算常量表达式
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use crate::expression::ast::Expression;
+use anyhow::Result;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 常量折叠优化器
+pub struct ConstantFoldingOptimizer;
+
+impl ConstantFoldingOptimizer {
+    /// 创建新的常量折叠优化器
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// 优化表达式
+    pub fn optimize(&self, expression: &Expression) -> Result<Expression> {
+        // TODO: 实现常量折叠优化
+        Ok(expression.clone())
+    }
+}

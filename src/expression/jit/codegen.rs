@@ -15,23 +15,27 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 代码生成模块
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式到机器码的代码生成功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use crate::expression::ast::Expression;
+use anyhow::Result;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 代码生成器
+pub struct CodeGenerator {
+    // TODO: 实现代码生成器
+}
+
+impl CodeGenerator {
+    /// 创建新的代码生成器
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// 生成表达式代码
+    pub fn generate_expression(&self, _expression: &Expression) -> Result<Vec<u8>> {
+        // TODO: 实现代码生成
+        Ok(vec![])
+    }
+}

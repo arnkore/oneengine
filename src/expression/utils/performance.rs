@@ -15,23 +15,32 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 性能监控工具
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式执行性能监控功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use std::time::Instant;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 性能监控器
+pub struct PerformanceMonitor {
+    start_time: Option<Instant>,
+}
+
+impl PerformanceMonitor {
+    /// 创建新的性能监控器
+    pub fn new() -> Self {
+        Self {
+            start_time: None,
+        }
+    }
+
+    /// 开始监控
+    pub fn start(&mut self) {
+        self.start_time = Some(Instant::now());
+    }
+
+    /// 结束监控
+    pub fn end(&mut self) -> Option<std::time::Duration> {
+        self.start_time.take().map(|start| start.elapsed())
+    }
+}

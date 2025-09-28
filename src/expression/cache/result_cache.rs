@@ -15,23 +15,27 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 结果缓存实现
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式执行结果的缓存功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use arrow::array::ArrayRef;
+use anyhow::Result;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 结果缓存实现
+pub struct ResultCacheImpl {
+    // TODO: 实现结果缓存
+}
+
+impl ResultCacheImpl {
+    /// 创建新的结果缓存
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// 缓存结果
+    pub fn cache_result(&mut self, _key: &str, _result: &ArrayRef) -> Result<()> {
+        // TODO: 实现结果缓存
+        Ok(())
+    }
+}

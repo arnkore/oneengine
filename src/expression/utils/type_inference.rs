@@ -15,23 +15,19 @@
  * limitations under the License.
  */
 
-
-//! OneEngine - A unified native engine for Spark, Flink, Trino, and Presto workers
+//! 类型推断工具
 //! 
-//! This crate provides a high-performance, unified execution engine that can serve
-//! as a worker for multiple big data processing frameworks.
+//! 提供表达式类型推断功能
 
-pub mod protocol;
-pub mod memory;
-pub mod utils;
-pub mod execution;
-pub mod datalake;
-pub mod ipc;
-pub mod simd;
-pub mod network;
-pub mod serialization;
-pub mod expression;
+use crate::expression::ast::types::TypeInferencer;
+use anyhow::Result;
 
-// Re-export commonly used types
-pub use execution::engine::OneEngine;
-pub use utils::config::Config;
+/// 类型推断工具
+pub struct TypeInferenceUtils;
+
+impl TypeInferenceUtils {
+    /// 推断表达式类型
+    pub fn infer_type(inferencer: &TypeInferencer, expression: &crate::expression::ast::Expression) -> Result<crate::expression::ast::types::DataType> {
+        inferencer.infer_type(expression).map_err(|e| anyhow::anyhow!("Type inference error: {:?}", e))
+    }
+}

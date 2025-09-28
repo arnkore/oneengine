@@ -18,18 +18,18 @@
 
 //! 列式过滤器
 //! 
-//! 提供完全面向列式的、全向量化极致优化的过滤算子实现
+//! 基于表达式引擎的向量化过滤算子实现
 
 use arrow::array::*;
 use arrow::compute::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;
-use arrow::error::ArrowError;
-use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn};
-use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
+use tracing::{debug, warn};
+use crate::execution::push_runtime::{Operator, OpStatus, Outbox, PortId};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::ast::Expression;
 use anyhow::Result;
 
 /// 列式向量化过滤器配置
