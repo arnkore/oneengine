@@ -28,6 +28,11 @@ pub mod local_shuffle;
 pub mod sort;
 pub mod limit;
 pub mod exchange;
+pub mod hash_join;
+pub mod window;
+pub mod topn;
+pub mod distinct;
+pub mod union;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
