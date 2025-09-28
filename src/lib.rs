@@ -25,7 +25,6 @@ pub mod scheduler;
 pub mod protocol;
 pub mod memory;
 pub mod utils;
-pub mod columnar;
 pub mod execution;
 pub mod push_runtime;
 pub mod datalake;
