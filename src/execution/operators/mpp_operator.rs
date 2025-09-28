@@ -144,80 +144,6 @@ pub struct MppOperatorStats {
 }
 
 
-/// Partition-aware scan operator
-pub struct MppScanOperator {
-    /// Partition ID to scan
-    partition_id: PartitionId,
-    /// Data source
-    data_source: Box<dyn MppDataSource>,
-    /// Statistics
-    stats: MppOperatorStats,
-}
-
-impl MppScanOperator {
-    pub fn new(partition_id: PartitionId, data_source: Box<dyn MppDataSource>) -> Self {
-        Self {
-            partition_id,
-            data_source,
-            stats: MppOperatorStats::default(),
-        }
-    }
-}
-
-impl MppOperator for MppScanOperator {
-    fn initialize(&mut self, _context: &MppContext) -> Result<()> {
-        self.data_source.initialize(self.partition_id)?;
-        Ok(())
-    }
-    
-    fn process_batch(&mut self, _batch: RecordBatch, _context: &MppContext) -> Result<Vec<RecordBatch>> {
-        // Scan operator generates data, doesn't process input
-        Err(anyhow::anyhow!("Scan operator doesn't process input batches"))
-    }
-    
-    fn exchange_data(&mut self, _data: Vec<RecordBatch>, _target_workers: Vec<WorkerId>) -> Result<()> {
-        // Scan operator doesn't exchange data
-        Err(anyhow::anyhow!("Scan operator doesn't exchange data"))
-    }
-    
-    fn process_partition(&mut self, partition_id: PartitionId, _data: RecordBatch) -> Result<RecordBatch> {
-        if partition_id == self.partition_id {
-            self.data_source.read_batch(partition_id)
-        } else {
-            Err(anyhow::anyhow!("Partition mismatch: expected {}, got {}", self.partition_id, partition_id))
-        }
-    }
-    
-    fn finish(&mut self, _context: &MppContext) -> Result<()> {
-        self.data_source.close()?;
-        Ok(())
-    }
-    
-    fn get_stats(&self) -> MppOperatorStats {
-        self.stats.clone()
-    }
-    
-    fn recover(&mut self, _context: &MppContext) -> Result<()> {
-        self.data_source.recover()?;
-        self.stats = MppOperatorStats::default();
-        Ok(())
-    }
-}
-
-/// Data source trait for MPP operations
-pub trait MppDataSource: Send + Sync {
-    /// Initialize data source
-    fn initialize(&mut self, partition_id: PartitionId) -> Result<()>;
-    
-    /// Read batch from partition
-    fn read_batch(&mut self, partition_id: PartitionId) -> Result<RecordBatch>;
-    
-    /// Close data source
-    fn close(&mut self) -> Result<()>;
-    
-    /// Recover from failure
-    fn recover(&mut self) -> Result<()>;
-}
 
 /// Hash join operator for MPP
 pub struct MppHashJoinOperator {
@@ -263,8 +189,15 @@ impl MppOperatorFactory {
     }
     
     /// Create scan operator
-    pub fn create_scan(partition_id: PartitionId, data_source: Box<dyn MppDataSource>) -> Box<dyn MppOperator> {
-        Box::new(MppScanOperator::new(partition_id, data_source))
+    pub fn create_scan(partition_id: PartitionId, data_source: Box<dyn crate::execution::operators::mpp_scan::MppDataSource>) -> Box<dyn MppOperator> {
+        use crate::execution::operators::mpp_scan::{MppScanOperator, MppScanConfig};
+        let config = MppScanConfig::default();
+        Box::new(MppScanOperator::new(
+            Uuid::new_v4(),
+            partition_id,
+            data_source,
+            config,
+        ))
     }
     
     /// Create hash join operator

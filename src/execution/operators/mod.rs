@@ -35,6 +35,7 @@ pub mod mpp_exchange;
 pub mod mpp_aggregator;
 pub mod mpp_join;
 pub mod mpp_sort;
+pub mod mpp_scan;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
