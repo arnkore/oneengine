@@ -26,7 +26,6 @@ pub mod extreme_observability;
 pub mod executor;
 pub mod worker;
 pub mod vectorized_driver;
-pub mod engine;
 pub mod pipeline;
 pub mod task;
 pub mod mpp_engine;

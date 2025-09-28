@@ -16,7 +16,7 @@
  */
 
 
-use oneengine::execution::engine::OneEngine;
+use oneengine::execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
 use oneengine::utils::config::Config;
 use tracing::{info, error};
 
@@ -27,25 +27,24 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    info!("Starting OneEngine - Unified Native Engine");
+    info!("Starting MPP Execution Engine - Distributed Query Processing");
 
     // Load configuration
     let config = Config::load()?;
     info!("Configuration loaded: {:?}", config);
 
-    // Create and start the engine
-    let mut engine = OneEngine::new(config).await?;
+    // Create MPP execution engine configuration
+    let mpp_config = MppExecutionEngineFactory::create_default_config(
+        "worker-1".to_string(),
+        vec!["worker-1".to_string(), "worker-2".to_string(), "worker-3".to_string()],
+    );
     
-    match engine.start().await {
-        Ok(_) => {
-            info!("OneEngine started successfully");
-            engine.run().await?;
-        }
-        Err(e) => {
-            error!("Failed to start OneEngine: {}", e);
-            return Err(e);
-        }
-    }
+    // Create and start the MPP engine
+    let mut engine = MppExecutionEngineFactory::create_engine(mpp_config);
+    info!("MPP Execution Engine created successfully");
+    
+    // For now, just demonstrate the engine is ready
+    info!("MPP Execution Engine is ready for distributed query processing");
 
     Ok(())
 }

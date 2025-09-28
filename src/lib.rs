@@ -33,5 +33,5 @@ pub mod serialization;
 pub mod expression;
 
 // Re-export commonly used types
-pub use execution::engine::OneEngine;
+pub use execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
 pub use utils::config::Config;
