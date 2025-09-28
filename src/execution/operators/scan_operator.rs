@@ -245,12 +245,6 @@ impl VectorizedScanOperator {
         debug!("Applied predicate pushdown: {} files filtered in {:?}", filtered_files, duration);
         Ok(())
     }
-    
-    /// 获取列索引
-    fn get_column_index_by_name(&self, _column_name: &str) -> Option<usize> {
-        // 简化的列索引获取，避免使用不存在的API
-        Some(0) // 对于简化实现，返回第一个列的索引
-    }
 
     /// 应用列投影
     pub fn apply_column_projection(&mut self, columns: Vec<String>) -> Result<(), String> {
