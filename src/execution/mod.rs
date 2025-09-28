@@ -20,7 +20,7 @@ pub mod vectorized_operator;
 pub mod driver;
 pub mod scheduler;
 pub mod operators;
-pub mod numa_pipeline;
+// pub mod numa_pipeline; // 暂时注释掉，未使用
 // pub mod adaptive_batching; // 暂时注释掉，只在example中使用
 pub mod skew_handling;
 pub mod extreme_observability;
