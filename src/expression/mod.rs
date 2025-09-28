@@ -25,6 +25,7 @@
 pub mod ast;
 pub mod executor;
 pub mod cache;
+pub mod functions;
 
 use arrow::array::ArrayRef;
 use arrow::record_batch::RecordBatch;
@@ -60,6 +61,7 @@ pub struct VectorizedExpressionEngine {
     config: ExpressionEngineConfig,
     executor: executor::VectorizedExecutor,
     cache: Option<cache::ExpressionCache>,
+    function_engine: functions::FunctionEvaluatorEngine,
 }
 
 impl VectorizedExpressionEngine {
@@ -71,11 +73,13 @@ impl VectorizedExpressionEngine {
         } else {
             None
         };
+        let function_engine = functions::FunctionEvaluatorEngine::new();
 
         Ok(Self {
             config,
             executor,
             cache,
+            function_engine,
         })
     }
 
@@ -97,6 +101,23 @@ impl VectorizedExpressionEngine {
         }
 
         Ok(result)
+    }
+
+    /// 执行函数
+    pub fn execute_function(&mut self, name: &str, args: &[ArrayRef], batch: &RecordBatch) -> Result<ArrayRef> {
+        let context = functions::FunctionContext {
+            batch: Arc::new(batch.clone()),
+            args: args.to_vec(),
+            stats: functions::FunctionStats::default(),
+        };
+        
+        let result = self.function_engine.evaluate(name, &context)?;
+        Ok(result.result)
+    }
+
+    /// 列出所有可用函数
+    pub fn list_functions(&self) -> Vec<&str> {
+        self.function_engine.list_functions()
     }
 
     /// 批量执行表达式
