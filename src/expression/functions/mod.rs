@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-//! 表达式函数求值框架
+//! Expression function evaluation framework
 //! 
-//! 提供可扩展的函数求值框架，每个函数单独实现
+//! Provides extensible function evaluation framework with individual function implementations
 
 pub mod arithmetic;
 pub mod comparison;
@@ -32,18 +32,18 @@ use arrow::record_batch::RecordBatch;
 use anyhow::Result;
 use std::sync::Arc;
 
-/// 函数求值上下文
+/// Function evaluation context
 #[derive(Debug, Clone)]
 pub struct FunctionContext {
-    /// 输入批次
+    /// Input batch
     pub batch: Arc<RecordBatch>,
-    /// 函数参数
+    /// Function arguments
     pub args: Vec<ArrayRef>,
-    /// 执行统计
+    /// Execution statistics
     pub stats: FunctionStats,
 }
 
-/// 函数执行统计
+/// Function execution statistics
 #[derive(Debug, Clone, Default)]
 pub struct FunctionStats {
     pub execution_count: u64,
@@ -51,66 +51,56 @@ pub struct FunctionStats {
     pub memory_used: usize,
 }
 
-/// 函数求值结果
+/// Function evaluation result
 #[derive(Debug, Clone)]
 pub struct FunctionResult {
-    /// 计算结果
+    /// Result array
     pub result: ArrayRef,
-    /// 执行统计
-    pub stats: FunctionStats,
 }
 
-/// 函数求值trait
-pub trait FunctionEvaluator: Send + Sync {
-    /// 函数名称
-    fn name(&self) -> &str;
-    
-    /// 函数描述
-    fn description(&self) -> &str;
-    
-    /// 参数数量
-    fn arity(&self) -> FunctionArity;
-    
-    /// 返回类型
-    fn return_type(&self, arg_types: &[arrow::datatypes::DataType]) -> Result<arrow::datatypes::DataType>;
-    
-    /// 求值函数
-    fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult>;
-    
-    /// 是否支持向量化
-    fn supports_vectorization(&self) -> bool {
-        true
-    }
-    
-    /// 是否支持SIMD优化
-    fn supports_simd(&self) -> bool {
-        false
-    }
-}
-
-/// 函数参数数量
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Function arity
+#[derive(Debug, Clone, PartialEq)]
 pub enum FunctionArity {
-    /// 固定参数数量
-    Fixed(usize),
-    /// 可变参数数量（最小，最大）
-    Variable(usize, Option<usize>),
+    /// Exact number of arguments
+    Exact(usize),
+    /// Variable number of arguments
+    Variadic,
+    /// Range of arguments (min, max)
+    Range(usize, usize),
 }
 
-/// 函数注册表
+/// Function evaluator trait
+pub trait FunctionEvaluator: Send + Sync {
+    /// Function name
+    fn name(&self) -> &str;
+    /// Function description
+    fn description(&self) -> &str;
+    /// Function arity
+    fn arity(&self) -> FunctionArity;
+    /// Return type
+    fn return_type(&self, arg_types: &[arrow::datatypes::DataType]) -> Result<arrow::datatypes::DataType>;
+    /// Evaluate function
+    fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult>;
+    /// Whether supports vectorization
+    fn supports_vectorization(&self) -> bool;
+    /// Whether supports SIMD
+    fn supports_simd(&self) -> bool;
+}
+
+/// Function registry
 pub struct FunctionRegistry {
     functions: std::collections::HashMap<String, Box<dyn FunctionEvaluator>>,
 }
 
 impl FunctionRegistry {
-    /// 创建新的函数注册表
+    /// Create new function registry
     pub fn new() -> Self {
         Self {
             functions: std::collections::HashMap::new(),
         }
     }
     
-    /// 注册函数
+    /// Register function
     pub fn register<F>(&mut self, function: F) 
     where 
         F: FunctionEvaluator + 'static,
@@ -118,40 +108,29 @@ impl FunctionRegistry {
         self.functions.insert(function.name().to_string(), Box::new(function));
     }
     
-    /// 获取函数
+    /// Get function
     pub fn get(&self, name: &str) -> Option<&dyn FunctionEvaluator> {
         self.functions.get(name).map(|f| f.as_ref())
     }
     
-    /// 列出所有函数
+    /// List all functions
     pub fn list_functions(&self) -> Vec<&str> {
         self.functions.keys().map(|k| k.as_str()).collect()
     }
-    
-    /// 获取函数数量
-    pub fn function_count(&self) -> usize {
-        self.functions.len()
-    }
 }
 
-impl Default for FunctionRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// 函数求值器
+/// Function evaluation engine
 pub struct FunctionEvaluatorEngine {
     registry: FunctionRegistry,
     stats: FunctionStats,
 }
 
 impl FunctionEvaluatorEngine {
-    /// 创建新的函数求值器
+    /// Create new function evaluator
     pub fn new() -> Self {
         let mut registry = FunctionRegistry::new();
         
-        // 注册算术函数
+        // Register arithmetic functions
         registry.register(arithmetic::AddFunction::new());
         registry.register(arithmetic::SubtractFunction::new());
         registry.register(arithmetic::MultiplyFunction::new());
@@ -159,7 +138,7 @@ impl FunctionEvaluatorEngine {
         registry.register(arithmetic::ModuloFunction::new());
         registry.register(arithmetic::PowerFunction::new());
         
-        // 注册比较函数
+        // Register comparison functions
         registry.register(comparison::EqualFunction::new());
         registry.register(comparison::NotEqualFunction::new());
         registry.register(comparison::LessThanFunction::new());
@@ -167,12 +146,12 @@ impl FunctionEvaluatorEngine {
         registry.register(comparison::GreaterThanFunction::new());
         registry.register(comparison::GreaterThanOrEqualFunction::new());
         
-        // 注册逻辑函数
+        // Register logical functions
         registry.register(logical::AndFunction::new());
         registry.register(logical::OrFunction::new());
         registry.register(logical::NotFunction::new());
         
-        // 注册数学函数
+        // Register math functions
         registry.register(math::AbsFunction::new());
         registry.register(math::SqrtFunction::new());
         registry.register(math::SinFunction::new());
@@ -180,7 +159,7 @@ impl FunctionEvaluatorEngine {
         registry.register(math::ExpFunction::new());
         registry.register(math::LnFunction::new());
         
-        // 注册日期时间函数
+        // Register date/time functions
         registry.register(date::CurrentDateFunction::new());
         registry.register(date::CurrentTimeFunction::new());
         registry.register(date::CurrentTimestampFunction::new());
@@ -190,7 +169,7 @@ impl FunctionEvaluatorEngine {
         registry.register(date::ExtractFunction::new());
         registry.register(date::FormatDateFunction::new());
         
-        // 注册字符串函数
+        // Register string functions
         registry.register(string::ConcatFunction::new());
         registry.register(string::SubstringFunction::new());
         registry.register(string::LengthFunction::new());
@@ -206,28 +185,28 @@ impl FunctionEvaluatorEngine {
         }
     }
     
-    /// 求值函数
+    /// Evaluate function
     pub fn evaluate(&mut self, name: &str, context: &FunctionContext) -> Result<FunctionResult> {
         let function = self.registry.get(name)
             .ok_or_else(|| anyhow::anyhow!("Function not found: {}", name))?;
         
-        let start_time = std::time::Instant::now();
+        let start = std::time::Instant::now();
         let result = function.evaluate(context)?;
-        let execution_time = start_time.elapsed();
+        let execution_time = start.elapsed();
         
-        // 更新统计信息
+        // Update statistics
         self.stats.execution_count += 1;
         self.stats.execution_time += execution_time;
         
         Ok(result)
     }
     
-    /// 获取统计信息
+    /// Get statistics
     pub fn get_stats(&self) -> &FunctionStats {
         &self.stats
     }
     
-    /// 列出所有函数
+    /// List all functions
     pub fn list_functions(&self) -> Vec<&str> {
         self.registry.list_functions()
     }

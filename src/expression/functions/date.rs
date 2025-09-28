@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-//! 日期时间函数实现
+//! Date and time functions implementation
 //! 
-//! 提供日期时间处理函数
+//! Provides date and time processing functions
 
 use super::{FunctionEvaluator, FunctionContext, FunctionResult, FunctionArity, FunctionStats};
 use arrow::array::*;
@@ -28,7 +28,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use chrono::{DateTime, Utc, NaiveDate, NaiveTime, NaiveDateTime, Timelike, Datelike};
 
-/// 当前日期函数
+/// Current date function
 pub struct CurrentDateFunction;
 
 impl CurrentDateFunction {
@@ -39,7 +39,7 @@ impl CurrentDateFunction {
 
 impl FunctionEvaluator for CurrentDateFunction {
     fn name(&self) -> &str { "current_date" }
-    fn description(&self) -> &str { "返回当前日期" }
+    fn description(&self) -> &str { "Returns current date" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(0) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Date32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -52,7 +52,7 @@ impl FunctionEvaluator for CurrentDateFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 当前时间函数
+/// Current time function
 pub struct CurrentTimeFunction;
 
 impl CurrentTimeFunction {
@@ -63,7 +63,7 @@ impl CurrentTimeFunction {
 
 impl FunctionEvaluator for CurrentTimeFunction {
     fn name(&self) -> &str { "current_time" }
-    fn description(&self) -> &str { "返回当前时间" }
+    fn description(&self) -> &str { "Returns current time" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(0) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Time64(TimeUnit::Microsecond)) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -76,7 +76,7 @@ impl FunctionEvaluator for CurrentTimeFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 当前时间戳函数
+/// Current timestamp function
 pub struct CurrentTimestampFunction;
 
 impl CurrentTimestampFunction {
@@ -87,7 +87,7 @@ impl CurrentTimestampFunction {
 
 impl FunctionEvaluator for CurrentTimestampFunction {
     fn name(&self) -> &str { "current_timestamp" }
-    fn description(&self) -> &str { "返回当前时间戳" }
+    fn description(&self) -> &str { "Returns current timestamp" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(0) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Timestamp(TimeUnit::Microsecond, None)) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -100,7 +100,7 @@ impl FunctionEvaluator for CurrentTimestampFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 日期加法函数
+/// Date addition function
 pub struct DateAddFunction;
 
 impl DateAddFunction {
@@ -111,7 +111,7 @@ impl DateAddFunction {
 
 impl FunctionEvaluator for DateAddFunction {
     fn name(&self) -> &str { "date_add" }
-    fn description(&self) -> &str { "日期加法" }
+    fn description(&self) -> &str { "Adds days to a date" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Date32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -142,7 +142,7 @@ impl FunctionEvaluator for DateAddFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 日期减法函数
+/// Date subtraction function
 pub struct DateSubFunction;
 
 impl DateSubFunction {
@@ -153,7 +153,7 @@ impl DateSubFunction {
 
 impl FunctionEvaluator for DateSubFunction {
     fn name(&self) -> &str { "date_sub" }
-    fn description(&self) -> &str { "日期减法" }
+    fn description(&self) -> &str { "Subtracts days from a date" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Date32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -184,7 +184,7 @@ impl FunctionEvaluator for DateSubFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 日期差值函数
+/// Date difference function
 pub struct DateDiffFunction;
 
 impl DateDiffFunction {
@@ -195,7 +195,7 @@ impl DateDiffFunction {
 
 impl FunctionEvaluator for DateDiffFunction {
     fn name(&self) -> &str { "date_diff" }
-    fn description(&self) -> &str { "计算两个日期的差值（天数）" }
+    fn description(&self) -> &str { "Calculates difference between two dates in days" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Int32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -226,7 +226,7 @@ impl FunctionEvaluator for DateDiffFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 提取日期时间部分函数
+/// Extract date/time part function
 pub struct ExtractFunction;
 
 impl ExtractFunction {
@@ -237,7 +237,7 @@ impl ExtractFunction {
 
 impl FunctionEvaluator for ExtractFunction {
     fn name(&self) -> &str { "extract" }
-    fn description(&self) -> &str { "提取日期时间的指定部分" }
+    fn description(&self) -> &str { "Extracts specified part from date/time" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Int32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -245,13 +245,13 @@ impl FunctionEvaluator for ExtractFunction {
             return Err(anyhow::anyhow!("extract requires exactly 2 arguments"));
         }
         
-        // 第一个参数是提取的部分（字符串），第二个参数是日期时间
+        // First argument is the part to extract (string), second is date/time
         let part_array = context.args[0].as_any().downcast_ref::<StringArray>()
             .ok_or_else(|| anyhow::anyhow!("First argument must be String"))?;
         
         let mut result_values = Vec::with_capacity(part_array.len());
         
-        // 根据第二个参数的类型进行处理
+        // Process based on the type of second argument
         if let Ok(date_array) = context.args[1].as_any().downcast_ref::<Date32Array>() {
             for i in 0..part_array.len() {
                 if part_array.is_null(i) || date_array.is_null(i) {
@@ -284,7 +284,7 @@ impl FunctionEvaluator for ExtractFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 格式化日期函数
+/// Format date function
 pub struct FormatDateFunction;
 
 impl FormatDateFunction {
@@ -295,7 +295,7 @@ impl FormatDateFunction {
 
 impl FunctionEvaluator for FormatDateFunction {
     fn name(&self) -> &str { "format_date" }
-    fn description(&self) -> &str { "格式化日期" }
+    fn description(&self) -> &str { "Formats a date" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -322,7 +322,7 @@ impl FunctionEvaluator for FormatDateFunction {
                     "YYYY-MM-DD" => date.format("%Y-%m-%d").to_string(),
                     "MM/DD/YYYY" => date.format("%m/%d/%Y").to_string(),
                     "DD-MM-YYYY" => date.format("%d-%m-%Y").to_string(),
-                    _ => date.format("%Y-%m-%d").to_string(), // 默认格式
+                    _ => date.format("%Y-%m-%d").to_string(), // Default format
                 };
                 result_values.push(Some(formatted));
             }

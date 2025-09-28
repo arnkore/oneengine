@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 
-//! 字符串函数实现
+//! String functions implementation
 //! 
-//! 提供字符串处理函数
+//! Provides string processing functions
 
 use super::{FunctionEvaluator, FunctionContext, FunctionResult, FunctionArity, FunctionStats};
 use arrow::array::*;
@@ -28,7 +28,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use regex::Regex;
 
-/// 字符串连接函数
+/// String concatenation function
 pub struct ConcatFunction;
 
 impl ConcatFunction {
@@ -39,7 +39,7 @@ impl ConcatFunction {
 
 impl FunctionEvaluator for ConcatFunction {
     fn name(&self) -> &str { "concat" }
-    fn description(&self) -> &str { "连接多个字符串" }
+    fn description(&self) -> &str { "Concatenates multiple strings" }
     fn arity(&self) -> FunctionArity { FunctionArity::Variadic }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -80,7 +80,7 @@ impl FunctionEvaluator for ConcatFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 子字符串函数
+/// Substring function
 pub struct SubstringFunction;
 
 impl SubstringFunction {
@@ -91,7 +91,7 @@ impl SubstringFunction {
 
 impl FunctionEvaluator for SubstringFunction {
     fn name(&self) -> &str { "substring" }
-    fn description(&self) -> &str { "提取子字符串" }
+    fn description(&self) -> &str { "Extracts substring" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(3) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -115,8 +115,8 @@ impl FunctionEvaluator for SubstringFunction {
                 let start = start_array.value(i) as usize;
                 let length = length_array.value(i) as usize;
                 
-                // 处理负索引
-                let start = if start > 0 { start - 1 } else { 0 }; // 转换为0-based索引
+                // Handle negative indices
+                let start = if start > 0 { start - 1 } else { 0 }; // Convert to 0-based index
                 let end = std::cmp::min(start + length, string.len());
                 
                 if start < string.len() {
@@ -135,7 +135,7 @@ impl FunctionEvaluator for SubstringFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 字符串长度函数
+/// String length function
 pub struct LengthFunction;
 
 impl LengthFunction {
@@ -146,7 +146,7 @@ impl LengthFunction {
 
 impl FunctionEvaluator for LengthFunction {
     fn name(&self) -> &str { "length" }
-    fn description(&self) -> &str { "计算字符串长度" }
+    fn description(&self) -> &str { "Calculates string length" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(1) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Int32) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -174,7 +174,7 @@ impl FunctionEvaluator for LengthFunction {
     fn supports_simd(&self) -> bool { true }
 }
 
-/// 转大写函数
+/// Convert to uppercase function
 pub struct UpperFunction;
 
 impl UpperFunction {
@@ -185,7 +185,7 @@ impl UpperFunction {
 
 impl FunctionEvaluator for UpperFunction {
     fn name(&self) -> &str { "upper" }
-    fn description(&self) -> &str { "转换为大写" }
+    fn description(&self) -> &str { "Converts to uppercase" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(1) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -213,7 +213,7 @@ impl FunctionEvaluator for UpperFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 转小写函数
+/// Convert to lowercase function
 pub struct LowerFunction;
 
 impl LowerFunction {
@@ -224,7 +224,7 @@ impl LowerFunction {
 
 impl FunctionEvaluator for LowerFunction {
     fn name(&self) -> &str { "lower" }
-    fn description(&self) -> &str { "转换为小写" }
+    fn description(&self) -> &str { "Converts to lowercase" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(1) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -252,7 +252,7 @@ impl FunctionEvaluator for LowerFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 去除空格函数
+/// Trim whitespace function
 pub struct TrimFunction;
 
 impl TrimFunction {
@@ -263,7 +263,7 @@ impl TrimFunction {
 
 impl FunctionEvaluator for TrimFunction {
     fn name(&self) -> &str { "trim" }
-    fn description(&self) -> &str { "去除首尾空格" }
+    fn description(&self) -> &str { "Trims leading and trailing whitespace" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(1) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -291,7 +291,7 @@ impl FunctionEvaluator for TrimFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 字符串替换函数
+/// String replacement function
 pub struct ReplaceFunction;
 
 impl ReplaceFunction {
@@ -302,7 +302,7 @@ impl ReplaceFunction {
 
 impl FunctionEvaluator for ReplaceFunction {
     fn name(&self) -> &str { "replace" }
-    fn description(&self) -> &str { "替换字符串中的子串" }
+    fn description(&self) -> &str { "Replaces substring in string" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(3) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Utf8) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -338,7 +338,7 @@ impl FunctionEvaluator for ReplaceFunction {
     fn supports_simd(&self) -> bool { false }
 }
 
-/// 正则表达式匹配函数
+/// Regular expression matching function
 pub struct RegexMatchFunction;
 
 impl RegexMatchFunction {
@@ -349,7 +349,7 @@ impl RegexMatchFunction {
 
 impl FunctionEvaluator for RegexMatchFunction {
     fn name(&self) -> &str { "regex_match" }
-    fn description(&self) -> &str { "正则表达式匹配" }
+    fn description(&self) -> &str { "Regular expression matching" }
     fn arity(&self) -> FunctionArity { FunctionArity::Exact(2) }
     fn return_type(&self, _arg_types: &[DataType]) -> Result<DataType> { Ok(DataType::Boolean) }
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult> {
@@ -376,7 +376,7 @@ impl FunctionEvaluator for RegexMatchFunction {
                         result_values.push(Some(matches));
                     },
                     Err(_) => {
-                        // 正则表达式编译失败，返回false
+                        // Regex compilation failed, return false
                         result_values.push(Some(false));
                     }
                 }

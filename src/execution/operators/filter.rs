@@ -15,48 +15,47 @@
  * limitations under the License.
  */
 
-
-//! 列式过滤器
+//! Columnar filter
 //! 
-//! 基于表达式引擎的完全面向列式的、全向量化极致优化的过滤算子实现
+//! Fully columnar, fully vectorized, extremely optimized filter operator implementation based on expression engine
 
+use super::super::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
+use crate::expression::VectorizedExpressionEngine;
+use crate::expression::ExpressionEngineConfig;
+use crate::expression::ast::Expression;
 use arrow::array::*;
-use arrow::compute::*;
-use arrow::datatypes::*;
+use arrow::compute::filter;
 use arrow::record_batch::RecordBatch;
+use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
-use datafusion_common::ScalarValue;
+use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn};
-use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
-use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
-use crate::expression::ast::{Expression, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp, ColumnRef, Literal};
-use anyhow::Result;
+use tracing::{debug, warn};
 
-/// 列式向量化过滤器配置
+/// Columnar vectorized filter configuration
 #[derive(Debug, Clone)]
 pub struct VectorizedFilterConfig {
-    /// 批次大小
+    /// Batch size
     pub batch_size: usize,
-    /// 是否启用SIMD优化
+    /// Whether to enable SIMD optimization
     pub enable_simd: bool,
-    /// 是否启用字典列优化
-    pub enable_dictionary_optimization: bool,
-    /// 是否启用压缩列优化
+    /// Whether to enable dictionary column optimization
+    pub enable_dict_optimization: bool,
+    /// Whether to enable compressed column optimization
     pub enable_compressed_optimization: bool,
-    /// 是否启用零拷贝优化
+    /// Whether to enable zero-copy optimization
     pub enable_zero_copy: bool,
-    /// 是否启用预取优化
+    /// Whether to enable prefetch optimization
     pub enable_prefetch: bool,
 }
 
 impl Default for VectorizedFilterConfig {
     fn default() -> Self {
         Self {
-            batch_size: 8192,
+            batch_size: 1024,
             enable_simd: true,
-            enable_dictionary_optimization: true,
+            enable_dict_optimization: true,
             enable_compressed_optimization: true,
             enable_zero_copy: true,
             enable_prefetch: true,
@@ -64,48 +63,38 @@ impl Default for VectorizedFilterConfig {
     }
 }
 
-/// 列式向量化过滤器
+/// Columnar vectorized filter
 pub struct VectorizedFilter {
     config: VectorizedFilterConfig,
-    /// 表达式引擎
+    /// Expression engine
     expression_engine: VectorizedExpressionEngine,
-    /// 过滤表达式（统一使用Expression AST）
+    /// Filter expression (unified using Expression AST)
     predicate: Expression,
     column_index: Option<usize>,
     cached_mask: Option<BooleanArray>,
     stats: FilterStats,
-    /// 算子ID
+    /// Operator ID
     operator_id: u32,
-    /// 输入端口
+    /// Input ports
     input_ports: Vec<PortId>,
-    /// 输出端口
+    /// Output ports
     output_ports: Vec<PortId>,
-    /// 是否完成
+    /// Whether finished
     finished: bool,
-    /// 算子名称
+    /// Operator name
     name: String,
-}
-
-#[derive(Debug, Default)]
-pub struct FilterStats {
-    pub total_rows_processed: u64,
-    pub total_rows_filtered: u64,
-    pub total_batches_processed: u64,
-    pub total_filter_time: std::time::Duration,
-    pub avg_filter_time: std::time::Duration,
-    pub selectivity: f64,
 }
 
 impl VectorizedFilter {
     pub fn new(
         config: VectorizedFilterConfig, 
-        predicate: Expression,
+        predicate: Expression, // Directly use Expression
         operator_id: u32,
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
         name: String,
     ) -> Result<Self> {
-        // 创建表达式引擎配置
+        // Create expression engine configuration
         let expression_config = ExpressionEngineConfig {
             enable_jit: config.enable_simd,
             enable_simd: config.enable_simd,
@@ -116,7 +105,7 @@ impl VectorizedFilter {
             batch_size: config.batch_size,
         };
         
-        // 创建表达式引擎
+        // Create expression engine
         let expression_engine = VectorizedExpressionEngine::new(expression_config)?;
         
         Ok(Self {
@@ -134,46 +123,46 @@ impl VectorizedFilter {
         })
     }
 
-    /// 设置列索引
+    /// Set column index
     pub fn set_column_index(&mut self, index: usize) {
         self.column_index = Some(index);
     }
 
-    /// 向量化过滤
+    /// Vectorized filtering
     pub fn filter(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
         let start = Instant::now();
         
-        // 直接使用表达式引擎执行过滤
+        // Directly use expression engine for filtering
         let mask_result = self.expression_engine.execute(&self.predicate, batch)
             .map_err(|e| e.to_string())?;
         
-        // 将结果转换为BooleanArray
+        // Convert result to BooleanArray
         let mask = mask_result.as_any().downcast_ref::<BooleanArray>()
             .ok_or_else(|| "Expression result is not a boolean array".to_string())?;
-            
-            // 使用Arrow compute kernel进行过滤
-            let filtered_columns: Result<Vec<ArrayRef>, ArrowError> = batch
-                .columns()
-                .iter()
+        
+        // Use Arrow compute kernel for filtering
+        let filtered_columns: Result<Vec<ArrayRef>, ArrowError> = batch
+            .columns()
+            .iter()
             .map(|col| filter(col, mask))
-                .collect();
-            
-            let filtered_columns = filtered_columns.map_err(|e| e.to_string())?;
-            let filtered_schema = batch.schema();
-            
-            let result = RecordBatch::try_new(filtered_schema, filtered_columns)
-                .map_err(|e| e.to_string())?;
-            
-            let duration = start.elapsed();
-            self.update_stats(batch.num_rows(), result.num_rows(), duration);
-            
-            debug!("向量化过滤完成: {} rows -> {} rows ({}μs)", 
-                   batch.num_rows(), result.num_rows(), duration.as_micros());
-            
-            Ok(result)
+            .collect();
+        
+        let filtered_columns = filtered_columns.map_err(|e| e.to_string())?;
+        let filtered_schema = batch.schema();
+        
+        let result = RecordBatch::try_new(filtered_schema, filtered_columns)
+            .map_err(|e| e.to_string())?;
+        
+        let duration = start.elapsed();
+        self.update_stats(batch.num_rows(), result.num_rows(), duration);
+        
+        debug!("Vectorized filtering completed: {} rows -> {} rows ({}μs)", 
+               batch.num_rows(), result.num_rows(), duration.as_micros());
+        
+        Ok(result)
     }
 
-    /// 更新统计信息
+    /// Update statistics
     fn update_stats(&mut self, input_rows: usize, output_rows: usize, duration: std::time::Duration) {
         self.stats.total_rows_processed += input_rows as u64;
         self.stats.total_rows_filtered += output_rows as u64;
@@ -191,13 +180,72 @@ impl VectorizedFilter {
         }
     }
 
-    /// 获取统计信息
+    /// Get statistics
     pub fn get_stats(&self) -> &FilterStats {
         &self.stats
     }
 
-    /// 重置统计信息
+    /// Reset statistics
     pub fn reset_stats(&mut self) {
         self.stats = FilterStats::default();
+    }
+}
+
+/// Filter statistics
+#[derive(Debug, Clone, Default)]
+pub struct FilterStats {
+    pub total_rows_processed: u64,
+    pub total_rows_filtered: u64,
+    pub total_batches_processed: u64,
+    pub total_filter_time: std::time::Duration,
+    pub avg_filter_time: std::time::Duration,
+    pub selectivity: f64,
+}
+
+impl Operator for VectorizedFilter {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { port, batch } => {
+                if self.input_ports.contains(&port) {
+                    match self.filter(&batch) {
+                        Ok(filtered_batch) => {
+                            // Send to all output ports
+                            for &output_port in &self.output_ports {
+                                out.send(output_port, filtered_batch.clone());
+                            }
+                            OpStatus::Ready
+                        },
+                        Err(e) => {
+                            warn!("Vectorized filtering failed: {}", e);
+                            OpStatus::Error("Vectorized filtering failed".to_string())
+                        }
+                    }
+                } else {
+                    warn!("Unknown input port: {}", port);
+                    OpStatus::Error("Unknown input port".to_string())
+                }
+            },
+            Event::EndOfStream { port } => {
+                if self.input_ports.contains(&port) {
+                    self.finished = true;
+                    // Forward EndOfStream event
+                    for &output_port in &self.output_ports {
+                        out.send_eos(output_port);
+                    }
+                    OpStatus::Finished
+                } else {
+                    OpStatus::Ready
+                }
+            },
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        &self.name
     }
 }
