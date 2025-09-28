@@ -30,7 +30,6 @@ pub mod execution;
 pub mod push_runtime;
 pub mod io;
 pub mod simd;
-pub mod concurrency;
 pub mod network;
 pub mod serialization;
 
