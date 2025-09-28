@@ -84,16 +84,6 @@ impl EventLoop {
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
     ) -> Result<()> {
-        // 创建算子上下文
-        let ctx = super::OperatorContext::new(
-            operator_id,
-            input_ports.clone(),
-            output_ports.clone(),
-            self.metrics.clone(),
-        );
-        
-        // 注册算子
-        operator.on_register(ctx)?;
         
         // 设置端口映射
         for port in input_ports.iter().chain(output_ports.iter()) {

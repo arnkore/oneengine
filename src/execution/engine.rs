@@ -16,13 +16,13 @@
  */
 
 
-use crate::scheduler::push_scheduler::PushScheduler;
+use crate::execution::scheduler::push_scheduler::PushScheduler;
 use crate::execution::executor::Executor;
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::execution::operators::vectorized_scan_operator::VectorizedScanConfig;
-use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
-use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
-use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};
+use crate::execution::operators::scan_operator::VectorizedScanConfig;
+use crate::execution::operators::filter::{FilterPredicate, VectorizedFilterConfig};
+use crate::execution::operators::projector::{ProjectionExpression, VectorizedProjectorConfig};
+use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::protocol::adapter::ProtocolAdapter;
 use crate::utils::config::Config;
 use crate::execution::pipeline::Pipeline;

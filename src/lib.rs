@@ -21,12 +21,10 @@
 //! This crate provides a high-performance, unified execution engine that can serve
 //! as a worker for multiple big data processing frameworks.
 
-pub mod scheduler;
 pub mod protocol;
 pub mod memory;
 pub mod utils;
 pub mod execution;
-pub mod push_runtime;
 pub mod datalake;
 pub mod ipc;
 pub mod simd;

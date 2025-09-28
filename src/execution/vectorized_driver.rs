@@ -20,11 +20,11 @@
 //! 
 //! 集成向量化算子、湖仓读取、pipeline调度、task调度的完整执行器
 
-use crate::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, SimpleMetricsCollector};
-use crate::execution::operators::vectorized_filter::*;
-use crate::execution::operators::vectorized_projector::*;
-use crate::execution::operators::vectorized_aggregator::*;
-use crate::execution::operators::vectorized_scan_operator::*;
+use crate::execution::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, SimpleMetricsCollector};
+use crate::execution::operators::filter::*;
+use crate::execution::operators::projector::*;
+use crate::execution::operators::aggregator::*;
+use crate::execution::operators::scan_operator::*;
 use crate::execution::worker::Worker;
 use arrow::array::*;
 use arrow::datatypes::*;

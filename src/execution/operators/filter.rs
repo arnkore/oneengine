@@ -16,7 +16,7 @@
  */
 
 
-//! 列式向量化过滤器
+//! 列式过滤器
 //! 
 //! 提供完全面向列式的、全向量化极致优化的过滤算子实现
 
@@ -29,7 +29,7 @@ use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
-use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use anyhow::Result;
 
 /// 列式向量化过滤器配置
@@ -392,10 +392,6 @@ impl VectorizedFilter {
 
 /// 实现Operator trait
 impl Operator for VectorizedFilter {
-    fn on_register(&mut self, _ctx: OperatorContext) -> Result<()> {
-        debug!("向量化过滤器算子注册: {}", self.name);
-        Ok(())
-    }
     
     fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
         match ev {

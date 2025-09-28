@@ -18,14 +18,14 @@
 
 use crate::execution::task::Task;
 use crate::execution::pipeline::Pipeline;
-use crate::scheduler::task_queue::TaskQueue;
-use crate::scheduler::pipeline_manager::PipelineManager;
-use crate::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
+use crate::execution::scheduler::task_queue::TaskQueue;
+use crate::execution::scheduler::pipeline_manager::PipelineManager;
+use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::execution::operators::vectorized_scan_operator::VectorizedScanConfig;
-use crate::execution::operators::vectorized_filter::{FilterPredicate, VectorizedFilterConfig};
-use crate::execution::operators::vectorized_projector::{ProjectionExpression, VectorizedProjectorConfig};
-use crate::execution::operators::vectorized_aggregator::{AggregationFunction, VectorizedAggregatorConfig};
+use crate::execution::operators::scan_operator::VectorizedScanConfig;
+use crate::execution::operators::filter::{FilterPredicate, VectorizedFilterConfig};
+use crate::execution::operators::projector::{ProjectionExpression, VectorizedProjectorConfig};
+use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::utils::config::SchedulerConfig;
 use anyhow::Result;
 use std::sync::Arc;
@@ -194,7 +194,7 @@ impl PushScheduler {
     }
 
     /// Schedule a task for execution
-    async fn schedule_task_for_execution(&self, task: Task, allocation: crate::scheduler::resource_manager::ResourceAllocation) -> Result<()> {
+    async fn schedule_task_for_execution(&self, task: Task, allocation: crate::execution::scheduler::resource_manager::ResourceAllocation) -> Result<()> {
         debug!("Scheduling task {} for execution", task.id);
         
         // This would typically send the task to the executor

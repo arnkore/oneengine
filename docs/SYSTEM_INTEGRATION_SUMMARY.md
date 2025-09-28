@@ -16,7 +16,6 @@
 - **VectorizedDriver**: 向量化执行器驱动
 - **Driver**: 完整的算子驱动实现
 - **EventLoop**: 事件驱动调度
-- **OperatorContext**: 算子上下文管理
 
 ### 3. Pipeline 执行系统 ✅
 - **Pipeline**: 有向无环图管道定义
@@ -104,7 +103,6 @@ OneEngine
 │   └── PipelineManager
 ├── VectorizedDriver (向量化驱动)
 │   ├── EventLoop
-│   ├── OperatorContext
 │   └── Outbox
 ├── Execution Pipeline (执行管道)
 │   ├── VectorizedFilter

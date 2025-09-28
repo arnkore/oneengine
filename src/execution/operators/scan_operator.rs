@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-//! 向量化扫描算子
+//! 扫描算子
 //! 
 //! 集成湖仓读取器与向量化算子的扫描算子
 
@@ -25,7 +25,7 @@ use arrow::record_batch::RecordBatch;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
-use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::datalake::unified_lake_reader::*;
 use anyhow::Result;
 
@@ -282,10 +282,6 @@ impl VectorizedScanOperator {
 
 /// 实现Operator trait
 impl Operator for VectorizedScanOperator {
-    fn on_register(&mut self, _ctx: OperatorContext) -> Result<()> {
-        debug!("向量化扫描算子注册: {}", self.name);
-        Ok(())
-    }
     
     fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
         match ev {

@@ -20,14 +20,18 @@
 //! 
 //! 充分利用Arrow的计算内核和数据结构
 
-pub mod vectorized_filter;
-pub mod vectorized_projector;
-pub mod vectorized_aggregator;
-pub mod vectorized_scan_operator;
+pub mod filter;
+pub mod projector;
+pub mod aggregator;
+pub mod scan_operator;
+pub mod local_shuffle;
+pub mod sort;
+pub mod limit;
+pub mod exchange;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;
-use crate::push_runtime::{Operator, OperatorContext, Event, OpStatus, Outbox, PortId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -144,7 +148,7 @@ pub trait SpillableOperator: Operator {
 /// 运行时过滤器支持
 pub trait RuntimeFilterSupport: Operator {
     /// 应用运行时过滤器
-    fn apply_runtime_filter(&mut self, filter: &crate::push_runtime::RuntimeFilter) -> Result<()>;
+    fn apply_runtime_filter(&mut self, filter: &crate::execution::push_runtime::RuntimeFilter) -> Result<()>;
     
     /// 检查过滤器是否可用
     fn has_runtime_filter(&self) -> bool;

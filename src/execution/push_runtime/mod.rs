@@ -23,7 +23,6 @@
 pub mod event_loop;
 pub mod credit_manager;
 pub mod outbox;
-pub mod operator_context;
 pub mod metrics;
 
 use arrow::record_batch::RecordBatch;
@@ -84,9 +83,6 @@ pub enum OpStatus {
 
 /// 算子接口
 pub trait Operator: Send + Sync {
-    /// 注册时调用
-    fn on_register(&mut self, ctx: OperatorContext) -> Result<()>;
-    
     /// 处理事件
     fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus;
     
@@ -100,7 +96,6 @@ pub trait Operator: Send + Sync {
 // 重新导出模块中的类型
 pub use credit_manager::CreditManager;
 pub use outbox::Outbox;
-pub use operator_context::OperatorContext;
 pub use metrics::{MetricsCollector, SimpleMetricsCollector};
 
 
