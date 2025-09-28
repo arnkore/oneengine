@@ -549,7 +549,7 @@ impl VectorizedProjector {
         }
     }
 
-    /// 计算算术表达式
+    /// 计算算术表达式 - 委托给表达式引擎
     fn evaluate_arithmetic_expression(
         &mut self,
         left: &ProjectionExpression,
@@ -557,169 +557,23 @@ impl VectorizedProjector {
         right: &ProjectionExpression,
         batch: &RecordBatch,
     ) -> Result<ArrayRef, String> {
-        let left_array = self.evaluate_expression(left, batch)?;
-        let right_array = self.evaluate_expression(right, batch)?;
+        // 转换为表达式引擎的表达式
+        let left_expr = self.convert_projection_to_expression(left, batch.schema())?;
+        let right_expr = self.convert_projection_to_expression(right, batch.schema())?;
+        let arithmetic_expr = Expression::Arithmetic(ArithmeticExpr {
+            left: Box::new(left_expr),
+            op: self.convert_arithmetic_op(op),
+            right: Box::new(right_expr),
+        });
         
-        match op {
-            ArithmeticOp::Add => {
-                self.evaluate_add(&left_array, &right_array)
-            },
-            ArithmeticOp::Subtract => {
-                self.evaluate_subtract(&left_array, &right_array)
-            },
-            ArithmeticOp::Multiply => {
-                self.evaluate_multiply(&left_array, &right_array)
-            },
-            ArithmeticOp::Divide => {
-                self.evaluate_divide(&left_array, &right_array)
-            },
-            ArithmeticOp::Modulo => {
-                self.evaluate_modulo(&left_array, &right_array)
-            },
-            ArithmeticOp::Power => {
-                self.evaluate_power(&left_array, &right_array)
-            },
-        }
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&arithmetic_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
-    /// 计算加法
-    fn evaluate_add(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Int32, DataType::Int32) => {
-                let left_array = left.as_any().downcast_ref::<Int32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::numeric::add(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Int64, DataType::Int64) => {
-                let left_array = left.as_any().downcast_ref::<Int64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::numeric::add(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float32, DataType::Float32) => {
-                let left_array = left.as_any().downcast_ref::<Float32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::numeric::add(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float64, DataType::Float64) => {
-                let left_array = left.as_any().downcast_ref::<Float64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::numeric::add(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported add operation: {:?} + {:?}", left.data_type(), right.data_type()))
-        }
-    }
 
-    /// 计算减法
-    fn evaluate_subtract(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Int32, DataType::Int32) => {
-                let left_array = left.as_any().downcast_ref::<Int32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Int64, DataType::Int64) => {
-                let left_array = left.as_any().downcast_ref::<Int64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float32, DataType::Float32) => {
-                let left_array = left.as_any().downcast_ref::<Float32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float64, DataType::Float64) => {
-                let left_array = left.as_any().downcast_ref::<Float64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported subtract operation: {:?} - {:?}", left.data_type(), right.data_type()))
-        }
-    }
 
-    /// 计算乘法
-    fn evaluate_multiply(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Int32, DataType::Int32) => {
-                let left_array = left.as_any().downcast_ref::<Int32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Int64, DataType::Int64) => {
-                let left_array = left.as_any().downcast_ref::<Int64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float32, DataType::Float32) => {
-                let left_array = left.as_any().downcast_ref::<Float32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float64, DataType::Float64) => {
-                let left_array = left.as_any().downcast_ref::<Float64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported multiply operation: {:?} * {:?}", left.data_type(), right.data_type()))
-        }
-    }
-
-    /// 计算除法
-    fn evaluate_divide(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Int32, DataType::Int32) => {
-                let left_array = left.as_any().downcast_ref::<Int32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Int64, DataType::Int64) => {
-                let left_array = left.as_any().downcast_ref::<Int64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float32, DataType::Float32) => {
-                let left_array = left.as_any().downcast_ref::<Float32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Float64, DataType::Float64) => {
-                let left_array = left.as_any().downcast_ref::<Float64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported divide operation: {:?} / {:?}", left.data_type(), right.data_type()))
-        }
-    }
-
-    /// 计算取模
-    fn evaluate_modulo(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Int32, DataType::Int32) => {
-                let left_array = left.as_any().downcast_ref::<Int32Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            (DataType::Int64, DataType::Int64) => {
-                let left_array = left.as_any().downcast_ref::<Int64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported modulo operation: {:?} % {:?}", left.data_type(), right.data_type()))
-        }
-    }
-
-    /// 计算幂运算
-    fn evaluate_power(&self, left: &ArrayRef, right: &ArrayRef) -> Result<ArrayRef, String> {
-        match (left.data_type(), right.data_type()) {
-            (DataType::Float64, DataType::Float64) => {
-                let left_array = left.as_any().downcast_ref::<Float64Array>().unwrap();
-                let right_array = right.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(left_array, right_array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported power operation: {:?} ^ {:?}", left.data_type(), right.data_type()))
-        }
-    }
-
-    /// 计算比较表达式
+    /// 计算比较表达式 - 委托给表达式引擎
     fn evaluate_comparison_expression(
         &mut self,
         left: &ProjectionExpression,
@@ -727,38 +581,21 @@ impl VectorizedProjector {
         right: &ProjectionExpression,
         batch: &RecordBatch,
     ) -> Result<ArrayRef, String> {
-        let left_array = self.evaluate_expression(left, batch)?;
-        let right_array = self.evaluate_expression(right, batch)?;
+        // 转换为表达式引擎的表达式
+        let left_expr = self.convert_projection_to_expression(left, batch.schema())?;
+        let right_expr = self.convert_projection_to_expression(right, batch.schema())?;
+        let comparison_expr = Expression::Comparison(ComparisonExpr {
+            left: Box::new(left_expr),
+            op: self.convert_comparison_op(op),
+            right: Box::new(right_expr),
+        });
         
-        match op {
-            ComparisonOp::Equal => {
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(&left_array, &right_array).map_err(|e| e.to_string())?))
-            },
-            ComparisonOp::NotEqual => {
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(&left_array, &right_array).map_err(|e| e.to_string())?))
-            },
-            ComparisonOp::LessThan => {
-                Ok(Arc::new(arrow::compute::kernels::cmp::lt(&left_array, &right_array).map_err(|e| e.to_string())?))
-            },
-            ComparisonOp::LessThanOrEqual => {
-                // 使用 lt 和 eq 的组合来实现 lte
-                let lt_result = arrow::compute::kernels::cmp::lt(&left_array, &right_array).map_err(|e| e.to_string())?;
-                let eq_result = arrow::compute::kernels::cmp::eq(&left_array, &right_array).map_err(|e| e.to_string())?;
-                Ok(Arc::new(arrow::compute::or(&lt_result, &eq_result).map_err(|e| e.to_string())?))
-            },
-            ComparisonOp::GreaterThan => {
-                Ok(Arc::new(arrow::compute::kernels::cmp::gt(&left_array, &right_array).map_err(|e| e.to_string())?))
-            },
-            ComparisonOp::GreaterThanOrEqual => {
-                // 使用 gt 和 eq 的组合来实现 gte
-                let gt_result = arrow::compute::kernels::cmp::gt(&left_array, &right_array).map_err(|e| e.to_string())?;
-                let eq_result = arrow::compute::kernels::cmp::eq(&left_array, &right_array).map_err(|e| e.to_string())?;
-                Ok(Arc::new(arrow::compute::or(&gt_result, &eq_result).map_err(|e| e.to_string())?))
-            },
-        }
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&comparison_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
-    /// 计算逻辑表达式
+    /// 计算逻辑表达式 - 委托给表达式引擎
     fn evaluate_logical_expression(
         &mut self,
         left: &ProjectionExpression,
@@ -766,48 +603,21 @@ impl VectorizedProjector {
         right: &ProjectionExpression,
         batch: &RecordBatch,
     ) -> Result<ArrayRef, String> {
-        let left_array = self.evaluate_expression(left, batch)?;
-        let right_array = self.evaluate_expression(right, batch)?;
+        // 转换为表达式引擎的表达式
+        let left_expr = self.convert_projection_to_expression(left, batch.schema())?;
+        let right_expr = self.convert_projection_to_expression(right, batch.schema())?;
+        let logical_expr = Expression::Logical(LogicalExpr {
+            left: Box::new(left_expr),
+            op: self.convert_logical_op(op),
+            right: Box::new(right_expr),
+        });
         
-        match op {
-            LogicalOp::And => {
-                let left_bool = if let Some(arr) = left_array.as_any().downcast_ref::<BooleanArray>() {
-                    arr.clone()
-                } else {
-                    BooleanArray::from(vec![true; left_array.len()])
-                };
-                let right_bool = if let Some(arr) = right_array.as_any().downcast_ref::<BooleanArray>() {
-                    arr.clone()
-                } else {
-                    BooleanArray::from(vec![true; right_array.len()])
-                };
-                Ok(Arc::new(arrow::compute::and(&left_bool, &right_bool).map_err(|e| e.to_string())?))
-            },
-            LogicalOp::Or => {
-                let left_bool = if let Some(arr) = left_array.as_any().downcast_ref::<BooleanArray>() {
-                    arr.clone()
-                } else {
-                    BooleanArray::from(vec![true; left_array.len()])
-                };
-                let right_bool = if let Some(arr) = right_array.as_any().downcast_ref::<BooleanArray>() {
-                    arr.clone()
-                } else {
-                    BooleanArray::from(vec![true; right_array.len()])
-                };
-                Ok(Arc::new(arrow::compute::or(&left_bool, &right_bool).map_err(|e| e.to_string())?))
-            },
-            LogicalOp::Not => {
-                let left_bool = if let Some(arr) = left_array.as_any().downcast_ref::<BooleanArray>() {
-                    arr.clone()
-                } else {
-                    BooleanArray::from(vec![true; left_array.len()])
-                };
-                Ok(Arc::new(arrow::compute::not(&left_bool).map_err(|e| e.to_string())?))
-            },
-        }
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&logical_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
-    /// 计算函数表达式
+    /// 计算函数表达式 - 委托给表达式引擎
     fn evaluate_function_expression(
         &mut self,
         name: &str,
@@ -816,188 +626,28 @@ impl VectorizedProjector {
     ) -> Result<ArrayRef, String> {
         self.stats.expression_eval_count.entry(name.to_string()).and_modify(|e| *e += 1).or_insert(1);
         
-        match name {
-            "abs" => {
-                if args.len() != 1 {
-                    return Err(format!("abs function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_abs(&arg_array)
-            },
-            "sqrt" => {
-                if args.len() != 1 {
-                    return Err(format!("sqrt function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_sqrt(&arg_array)
-            },
-            "sin" => {
-                if args.len() != 1 {
-                    return Err(format!("sin function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_sin(&arg_array)
-            },
-            "cos" => {
-                if args.len() != 1 {
-                    return Err(format!("cos function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_cos(&arg_array)
-            },
-            "exp" => {
-                if args.len() != 1 {
-                    return Err(format!("exp function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_exp(&arg_array)
-            },
-            "ln" => {
-                if args.len() != 1 {
-                    return Err(format!("ln function expects 1 argument, got {}", args.len()));
-                }
-                let arg_array = self.evaluate_expression(&args[0], batch)?;
-                self.evaluate_ln(&arg_array)
-            },
-            _ => Err(format!("Unknown function: {}", name))
+        // 转换参数为表达式引擎的表达式
+        let mut arg_exprs = Vec::new();
+        for arg in args {
+            arg_exprs.push(self.convert_projection_to_expression(arg, batch.schema())?);
         }
+        
+        // 创建函数调用表达式
+        let function_expr = Expression::Function(FunctionCall {
+            name: name.to_string(),
+            args: arg_exprs,
+            return_type: DataType::Float64, // 默认返回类型，表达式引擎会推断
+            is_aggregate: false,
+            is_window: false,
+        });
+        
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&function_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
-    /// 计算绝对值
-    fn evaluate_abs(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Int32 => {
-                let array = array.as_any().downcast_ref::<Int32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Int64 => {
-                let array = array.as_any().downcast_ref::<Int64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported abs operation for type: {:?}", array.data_type()))
-        }
-    }
 
-    /// 计算平方根
-    fn evaluate_sqrt(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                // 自定义sqrt实现
-                let sqrt_array = match array.data_type() {
-                    DataType::Float32 => {
-                        let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                        let sqrt_values: Vec<Option<f32>> = float_array.iter()
-                            .map(|v| v.map(|x| x.sqrt()))
-                            .collect();
-                        Arc::new(Float32Array::from(sqrt_values)) as ArrayRef
-                    },
-                    DataType::Float64 => {
-                        let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                        let sqrt_values: Vec<Option<f64>> = float_array.iter()
-                            .map(|v| v.map(|x| x.sqrt()))
-                            .collect();
-                        Arc::new(Float64Array::from(sqrt_values)) as ArrayRef
-                    },
-                    _ => return Err(format!("sqrt only supported for float types, got {:?}", array.data_type()))
-                };
-                Ok(sqrt_array)
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                // 自定义sqrt实现
-                let sqrt_array = match array.data_type() {
-                    DataType::Float32 => {
-                        let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                        let sqrt_values: Vec<Option<f32>> = float_array.iter()
-                            .map(|v| v.map(|x| x.sqrt()))
-                            .collect();
-                        Arc::new(Float32Array::from(sqrt_values)) as ArrayRef
-                    },
-                    DataType::Float64 => {
-                        let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                        let sqrt_values: Vec<Option<f64>> = float_array.iter()
-                            .map(|v| v.map(|x| x.sqrt()))
-                            .collect();
-                        Arc::new(Float64Array::from(sqrt_values)) as ArrayRef
-                    },
-                    _ => return Err(format!("sqrt only supported for float types, got {:?}", array.data_type()))
-                };
-                Ok(sqrt_array)
-            },
-            _ => Err(format!("Unsupported sqrt operation for type: {:?}", array.data_type()))
-        }
-    }
-
-    /// 计算正弦
-    fn evaluate_sin(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported sin operation for type: {:?}", array.data_type()))
-        }
-    }
-
-    /// 计算余弦
-    fn evaluate_cos(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported cos operation for type: {:?}", array.data_type()))
-        }
-    }
-
-    /// 计算指数
-    fn evaluate_exp(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported exp operation for type: {:?}", array.data_type()))
-        }
-    }
-
-    /// 计算自然对数
-    fn evaluate_ln(&self, array: &ArrayRef) -> Result<ArrayRef, String> {
-        match array.data_type() {
-            DataType::Float32 => {
-                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            DataType::Float64 => {
-                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
-                Ok(Arc::new(arrow::compute::kernels::cmp::eq(array, array).map_err(|e| e.to_string())?))
-            },
-            _ => Err(format!("Unsupported ln operation for type: {:?}", array.data_type()))
-        }
-    }
-
-    /// 计算条件表达式
+    /// 计算条件表达式 - 委托给表达式引擎
     fn evaluate_case_expression(
         &mut self,
         condition: &ProjectionExpression,
@@ -1005,25 +655,38 @@ impl VectorizedProjector {
         else_expr: &ProjectionExpression,
         batch: &RecordBatch,
     ) -> Result<ArrayRef, String> {
-        let condition_array = self.evaluate_expression(condition, batch)?;
-        let then_array = self.evaluate_expression(then_expr, batch)?;
-        let else_array = self.evaluate_expression(else_expr, batch)?;
+        // 转换为表达式引擎的表达式
+        let condition_expr = self.convert_projection_to_expression(condition, batch.schema())?;
+        let then_expr = self.convert_projection_to_expression(then_expr, batch.schema())?;
+        let else_expr = self.convert_projection_to_expression(else_expr, batch.schema())?;
+        let case_expr = Expression::Case(CaseExpr {
+            condition: Box::new(condition_expr),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        });
         
-        // 使用Arrow的case函数
-        Ok(Arc::new(arrow::compute::kernels::cmp::eq(&condition_array, &then_array).map_err(|e| e.to_string())?))
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&case_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
-    /// 计算类型转换
+    /// 计算类型转换 - 委托给表达式引擎
     fn evaluate_cast_expression(
         &mut self,
         expr: &ProjectionExpression,
         target_type: &DataType,
         batch: &RecordBatch,
     ) -> Result<ArrayRef, String> {
-        let array = self.evaluate_expression(expr, batch)?;
+        // 转换为表达式引擎的表达式
+        let expr = self.convert_projection_to_expression(expr, batch.schema())?;
+        let cast_expr = Expression::Cast(CastExpr {
+            expr: Box::new(expr),
+            target_type: target_type.clone(),
+        });
         
-        // 使用Arrow的cast函数
-        Ok(Arc::new(cast(&array, target_type).map_err(|e| e.to_string())?))
+        // 使用表达式引擎计算
+        self.expression_engine.execute(&cast_expr, batch)
+            .map_err(|e| e.to_string())
     }
 
     /// 更新统计信息

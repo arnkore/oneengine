@@ -139,6 +139,14 @@ impl VectorizedExpressionEngine {
         Ok(CompiledExpression::Interpreted(expression.clone()))
     }
 
+    /// 执行表达式（直接执行，内部会编译）
+    pub fn execute(&mut self, expression: &ast::Expression, batch: &RecordBatch) -> Result<ArrayRef> {
+        // 先编译表达式
+        let compiled = self.compile(expression)?;
+        // 然后执行
+        self.execute(&compiled, batch)
+    }
+
     /// 执行编译后的表达式
     pub fn execute(&mut self, compiled: &CompiledExpression, batch: &RecordBatch) -> Result<ArrayRef> {
         match compiled {

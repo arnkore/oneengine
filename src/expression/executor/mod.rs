@@ -22,6 +22,7 @@
 pub mod vectorized_executor;
 pub mod simd_executor;
 pub mod scalar_executor;
+pub mod expression_executor_impl;
 
 use crate::expression::ast::Expression;
 use crate::expression::jit::JitFunction;

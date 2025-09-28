@@ -24,6 +24,7 @@ use anyhow::Result;
 use arrow::array::ArrayRef;
 use arrow::record_batch::RecordBatch;
 use std::sync::Arc;
+use super::expression_executor_impl::ExpressionExecutorImpl;
 
 /// 向量化执行器实现
 pub struct VectorizedExecutorImpl;
@@ -35,10 +36,7 @@ impl VectorizedExecutorImpl {
     }
 
     /// 执行表达式
-    pub fn execute(&self, _expression: &Expression, _batch: &RecordBatch) -> Result<ArrayRef> {
-        // TODO: 实现向量化执行
-        use arrow::array::*;
-        use arrow::datatypes::*;
-        Ok(Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef)
+    pub fn execute(&self, expression: &Expression, batch: &RecordBatch) -> Result<ArrayRef> {
+        ExpressionExecutorImpl::execute(expression, batch)
     }
 }
