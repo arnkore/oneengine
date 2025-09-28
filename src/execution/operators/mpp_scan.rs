@@ -403,7 +403,6 @@ impl MppOperator for MppScanOperator {
     }
 }
 
-
 /// MPP scan operator factory
 pub struct MppScanOperatorFactory;
 
