@@ -52,6 +52,53 @@ pub struct MppSortConfig {
     pub use_external_sort: bool,
     /// External sort directory
     pub external_sort_dir: Option<String>,
+    /// Sort algorithm
+    pub sort_algorithm: SortAlgorithm,
+    /// Whether to enable parallel sorting
+    pub enable_parallel_sort: bool,
+    /// Number of parallel threads
+    pub parallel_threads: usize,
+    /// Whether to enable SIMD sorting
+    pub enable_simd_sort: bool,
+    /// Whether to enable radix sort for integers
+    pub enable_radix_sort: bool,
+    /// Whether to enable stable sorting
+    pub enable_stable_sort: bool,
+}
+
+/// Sort algorithm
+#[derive(Debug, Clone, PartialEq)]
+pub enum SortAlgorithm {
+    /// Quick sort
+    QuickSort,
+    /// Merge sort
+    MergeSort,
+    /// Heap sort
+    HeapSort,
+    /// Radix sort (for integers)
+    RadixSort,
+    /// Tim sort (stable)
+    TimSort,
+    /// Intro sort (hybrid)
+    IntroSort,
+}
+
+impl Default for MppSortConfig {
+    fn default() -> Self {
+        Self {
+            sort_columns: Vec::new(),
+            output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+            memory_limit: 1024 * 1024 * 1024, // 1GB
+            use_external_sort: true,
+            external_sort_dir: Some("/tmp/sort".to_string()),
+            sort_algorithm: SortAlgorithm::TimSort,
+            enable_parallel_sort: true,
+            parallel_threads: num_cpus::get(),
+            enable_simd_sort: true,
+            enable_radix_sort: true,
+            enable_stable_sort: true,
+        }
+    }
 }
 
 /// MPP sort operator

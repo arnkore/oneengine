@@ -25,9 +25,6 @@ pub mod filter;
 pub mod projector;
 pub mod local_shuffle;
 pub mod limit;
-pub mod window;
-pub mod distinct;
-pub mod union;
 
 // Distributed MPP operators
 pub mod mpp_operator;

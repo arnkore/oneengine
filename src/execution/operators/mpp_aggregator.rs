@@ -43,6 +43,32 @@ pub enum AggregationFunction {
     CountDistinct,
     StdDev,
     Variance,
+    /// First value
+    First,
+    /// Last value
+    Last,
+    /// String concatenation
+    Concat,
+    /// Array aggregation
+    ArrayAgg,
+    /// Bitwise AND
+    BitAnd,
+    /// Bitwise OR
+    BitOr,
+    /// Bitwise XOR
+    BitXor,
+    /// Geometric mean
+    GeometricMean,
+    /// Harmonic mean
+    HarmonicMean,
+    /// Median
+    Median,
+    /// Mode
+    Mode,
+    /// Percentile
+    Percentile { percentile: f64 },
+    /// Custom function
+    Custom { name: String },
 }
 
 /// Aggregation column specification
