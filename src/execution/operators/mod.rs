@@ -23,15 +23,9 @@
 // Legacy single-node operators (to be deprecated)
 pub mod filter;
 pub mod projector;
-pub mod aggregator;
-pub mod scan_operator;
 pub mod local_shuffle;
-pub mod sort;
 pub mod limit;
-pub mod exchange;
-pub mod hash_join;
 pub mod window;
-pub mod topn;
 pub mod distinct;
 pub mod union;
 
@@ -39,6 +33,8 @@ pub mod union;
 pub mod mpp_operator;
 pub mod mpp_exchange;
 pub mod mpp_aggregator;
+pub mod mpp_join;
+pub mod mpp_sort;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;

@@ -19,11 +19,9 @@
 use crate::execution::scheduler::push_scheduler::PushScheduler;
 use crate::execution::executor::Executor;
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::execution::operators::scan_operator::VectorizedScanConfig;
 use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
 use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
-use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::protocol::adapter::ProtocolAdapter;
 use crate::utils::config::Config;
 use crate::execution::pipeline::Pipeline;
@@ -269,15 +267,13 @@ impl OneEngine {
                         "aggregate" => {
                             OperatorNode {
                                 operator_id,
-                                operator_type: OperatorType::Aggregate { 
-                                    group_columns: vec![0],
-                                    agg_functions: vec![AggregationFunction::Count {
-                                        output_column: 0,
-                                    }],
+                                operator_type: OperatorType::Project { 
+                                    expressions: vec![],
+                                    output_schema: Arc::new(Schema::empty()),
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::AggregatorConfig(VectorizedAggregatorConfig::default()),
+                                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
                             }
                         },
                         _ => {

@@ -23,9 +23,7 @@
 use crate::execution::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, SimpleMetricsCollector};
 use crate::execution::operators::filter::*;
 use crate::execution::operators::projector::*;
-use crate::execution::operators::aggregator::*;
 use crate::expression::ast::Expression;
-use crate::execution::operators::scan_operator::*;
 use crate::execution::worker::Worker;
 use arrow::array::*;
 use arrow::datatypes::*;
@@ -109,7 +107,7 @@ pub enum OperatorType {
     Scan { file_path: String },
     Filter { predicate: Expression, column_index: usize },
     Project { expressions: Vec<Expression>, output_schema: SchemaRef },
-    Aggregate { group_columns: Vec<usize>, agg_functions: Vec<AggregationFunction> },
+    Aggregate { group_columns: Vec<usize>, agg_functions: Vec<String> },
     Sort { sort_columns: Vec<SortColumn> },
     Join { join_type: JoinType, left_keys: Vec<usize>, right_keys: Vec<usize> },
 }
@@ -117,10 +115,8 @@ pub enum OperatorType {
 /// 算子配置
 #[derive(Debug, Clone)]
 pub enum OperatorConfig {
-    ScanConfig(VectorizedScanConfig),
     FilterConfig(VectorizedFilterConfig),
     ProjectorConfig(VectorizedProjectorConfig),
-    AggregatorConfig(VectorizedAggregatorConfig),
 }
 
 /// 连接
@@ -396,7 +392,7 @@ impl VectorizedDriver {
         file_path: String,
         filter_predicate: Option<Expression>,
         projection_expressions: Option<Vec<Expression>>,
-        aggregation: Option<(Vec<usize>, Vec<AggregationFunction>)>,
+        aggregation: Option<(Vec<usize>, Vec<String>)>,
     ) -> QueryPlan {
         let mut operators = Vec::new();
         let mut connections = Vec::new();

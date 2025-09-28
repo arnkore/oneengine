@@ -22,11 +22,9 @@ use crate::execution::scheduler::task_queue::TaskQueue;
 use crate::execution::scheduler::pipeline_manager::PipelineManager;
 use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
 use crate::execution::vectorized_driver::VectorizedDriver;
-use crate::execution::operators::scan_operator::VectorizedScanConfig;
 use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
 use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
-use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::utils::config::SchedulerConfig;
 use anyhow::Result;
 use std::sync::Arc;
@@ -315,17 +313,15 @@ impl PushScheduler {
                             }
                         },
                         "aggregate" => {
+                            // TODO: Implement MPP aggregation operator
                             OperatorNode {
                                 operator_id,
-                                operator_type: OperatorType::Aggregate { 
-                                    group_columns: vec![0],
-                                    agg_functions: vec![AggregationFunction::Count {
-                                        output_column: 0,
-                                    }],
+                                operator_type: OperatorType::Project { 
+                                    expressions: vec![],
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::AggregatorConfig(VectorizedAggregatorConfig::default()),
+                                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
                             }
                         },
                         _ => {
