@@ -24,7 +24,8 @@ use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceCon
 use crate::execution::vectorized_driver::VectorizedDriver;
 use crate::execution::operators::scan_operator::VectorizedScanConfig;
 use crate::execution::operators::filter::{FilterPredicate, VectorizedFilterConfig};
-use crate::execution::operators::projector::{ProjectionExpression, VectorizedProjectorConfig};
+use crate::execution::operators::projector::VectorizedProjectorConfig;
+use crate::expression::ast::{Expression, ColumnRef};
 use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::utils::config::SchedulerConfig;
 use anyhow::Result;
@@ -292,7 +293,11 @@ impl PushScheduler {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Project { 
-                                    expressions: vec![ProjectionExpression::column("id".to_string())],
+                                    expressions: vec![Expression::Column(ColumnRef {
+                                        name: "id".to_string(),
+                                        index: 0,
+                                        data_type: DataType::Int32,
+                                    })],
                                     output_schema: Arc::new(Schema::new(vec![
                                         Field::new("id", DataType::Int32, false),
                                     ])),

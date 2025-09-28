@@ -24,6 +24,7 @@ use crate::execution::push_runtime::{event_loop::EventLoop, Event, PortId, Opera
 use crate::execution::operators::filter::*;
 use crate::execution::operators::projector::*;
 use crate::execution::operators::aggregator::*;
+use crate::expression::ast::Expression;
 use crate::execution::operators::scan_operator::*;
 use crate::execution::worker::Worker;
 use arrow::array::*;
@@ -107,7 +108,7 @@ pub struct OperatorNode {
 pub enum OperatorType {
     Scan { file_path: String },
     Filter { predicate: FilterPredicate, column_index: usize },
-    Project { expressions: Vec<ProjectionExpression>, output_schema: SchemaRef },
+    Project { expressions: Vec<Expression>, output_schema: SchemaRef },
     Aggregate { group_columns: Vec<usize>, agg_functions: Vec<AggregationFunction> },
     Sort { sort_columns: Vec<SortColumn> },
     Join { join_type: JoinType, left_keys: Vec<usize>, right_keys: Vec<usize> },
@@ -394,7 +395,7 @@ impl VectorizedDriver {
         &self,
         file_path: String,
         filter_predicate: Option<FilterPredicate>,
-        projection_expressions: Option<Vec<ProjectionExpression>>,
+        projection_expressions: Option<Vec<Expression>>,
         aggregation: Option<(Vec<usize>, Vec<AggregationFunction>)>,
     ) -> QueryPlan {
         let mut operators = Vec::new();

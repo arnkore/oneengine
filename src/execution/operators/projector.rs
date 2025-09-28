@@ -71,58 +71,17 @@ impl Default for VectorizedProjectorConfig {
     }
 }
 
-/// 投影表达式
-#[derive(Debug, Clone)]
-pub enum ProjectionExpression {
-    /// 列引用
-    Column { index: usize, name: String },
-    /// 常量值
-    Literal { value: ScalarValue },
-    /// 算术表达式
-    Arithmetic { left: Box<ProjectionExpression>, op: ArithmeticOp, right: Box<ProjectionExpression> },
-    /// 比较表达式
-    Comparison { left: Box<ProjectionExpression>, op: ComparisonOp, right: Box<ProjectionExpression> },
-    /// 逻辑表达式
-    Logical { left: Box<ProjectionExpression>, op: LogicalOp, right: Box<ProjectionExpression> },
-    /// 函数调用
-    Function { name: String, args: Vec<ProjectionExpression> },
-    /// 条件表达式
-    Case { condition: Box<ProjectionExpression>, then_expr: Box<ProjectionExpression>, else_expr: Box<ProjectionExpression> },
-    /// 类型转换
-    Cast { expr: Box<ProjectionExpression>, target_type: DataType },
-}
+// 删除ProjectionExpression，直接使用统一的Expression AST
 
-impl ProjectionExpression {
-    /// 创建列引用
-    pub fn column(name: String) -> Self {
-        Self::Column { index: 0, name }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ArithmeticOp {
-    Add, Subtract, Multiply, Divide, Modulo, Power,
-}
-
-#[derive(Debug, Clone)]
-pub enum ComparisonOp {
-    Equal, NotEqual, LessThan, LessThanOrEqual, GreaterThan, GreaterThanOrEqual,
-}
-
-#[derive(Debug, Clone)]
-pub enum LogicalOp {
-    And, Or, Not,
-}
+// 删除ProjectionExpression和相关的操作符定义，直接使用统一的Expression AST
 
 /// 列式向量化投影器
 pub struct VectorizedProjector {
     config: VectorizedProjectorConfig,
     /// 表达式引擎
     expression_engine: VectorizedExpressionEngine,
-    /// 编译后的投影表达式
-    compiled_expressions: Vec<Expression>,
-    /// 原始投影表达式（用于兼容性）
-    expressions: Vec<ProjectionExpression>,
+    /// 投影表达式（统一使用Expression AST）
+    expressions: Vec<Expression>,
     output_schema: SchemaRef,
     column_indices: Vec<usize>,
     stats: ProjectorStats,
@@ -151,7 +110,7 @@ pub struct ProjectorStats {
 impl VectorizedProjector {
     pub fn new(
         config: VectorizedProjectorConfig,
-        expressions: Vec<ProjectionExpression>,
+        expressions: Vec<Expression>,
         output_schema: SchemaRef,
         operator_id: u32,
         input_ports: Vec<PortId>,
@@ -177,7 +136,6 @@ impl VectorizedProjector {
         Ok(Self {
             config,
             expression_engine,
-            compiled_expressions: Vec::new(),
             expressions,
             output_schema,
             column_indices,
@@ -190,110 +148,52 @@ impl VectorizedProjector {
         })
     }
 
-    /// 将ProjectionExpression转换为Expression
-    fn convert_projection_to_expression(&self, projection: &ProjectionExpression, input_schema: &Schema) -> Result<Expression> {
-        match projection {
-            ProjectionExpression::Column { name, index } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == name)
-                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", name))?;
-                let data_type = input_schema.field(column_index).data_type().clone();
-                
-                Ok(Expression::Column(ColumnRef {
-                    name: name.clone(),
-                    index: column_index,
-                    data_type,
-                }))
+    /// 从Expression中提取列索引
+    fn extract_column_indices(expressions: &[Expression]) -> Vec<usize> {
+        let mut indices = Vec::new();
+        for expr in expressions {
+            Self::collect_column_indices(expr, &mut indices);
+        }
+        indices.sort();
+        indices.dedup();
+        indices
+    }
+
+    /// 递归收集表达式中的列索引
+    fn collect_column_indices(expr: &Expression, indices: &mut Vec<usize>) {
+        match expr {
+            Expression::Column(column_ref) => {
+                indices.push(column_ref.index);
             }
-            ProjectionExpression::Literal { value } => {
-                Ok(Expression::Literal(Literal {
-                    value: value.clone(),
-                }))
+            Expression::Arithmetic(arithmetic) => {
+                Self::collect_column_indices(&arithmetic.left, indices);
+                Self::collect_column_indices(&arithmetic.right, indices);
             }
-            ProjectionExpression::Arithmetic { left, op, right } => {
-                Ok(Expression::Arithmetic(ArithmeticExpr {
-                    left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
-                    op: self.convert_arithmetic_op(op),
-                    right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
-                }))
+            Expression::Comparison(comparison) => {
+                Self::collect_column_indices(&comparison.left, indices);
+                Self::collect_column_indices(&comparison.right, indices);
             }
-            ProjectionExpression::Function { name, args } => {
-                let converted_args = args.iter()
-                    .map(|arg| self.convert_projection_to_expression(arg, input_schema))
-                    .collect::<Result<Vec<_>>>()?;
-                
-                Ok(Expression::Function(FunctionCall {
-                    name: name.clone(),
-                    args: converted_args,
-                    return_type: DataType::Utf8, // 默认返回类型
-                    is_aggregate: false,
-                    is_window: false,
-                }))
+            Expression::Logical(logical) => {
+                Self::collect_column_indices(&logical.left, indices);
+                Self::collect_column_indices(&logical.right, indices);
             }
-            ProjectionExpression::Cast { expr, target_type } => {
-                Ok(Expression::Cast(CastExpr {
-                    expr: Box::new(self.convert_projection_to_expression(expr, input_schema)?),
-                    target_type: target_type.clone(),
-                }))
+            Expression::Function(function_call) => {
+                for arg in &function_call.args {
+                    Self::collect_column_indices(arg, indices);
+                }
             }
-            ProjectionExpression::Comparison { left, op, right } => {
-                Ok(Expression::Comparison(ComparisonExpr {
-                    left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
-                    op: self.convert_comparison_op(op),
-                    right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
-                }))
+            Expression::Case(case_expr) => {
+                Self::collect_column_indices(&case_expr.condition, indices);
+                Self::collect_column_indices(&case_expr.then_expr, indices);
+                Self::collect_column_indices(&case_expr.else_expr, indices);
             }
-            ProjectionExpression::Logical { left, op, right } => {
-                Ok(Expression::Logical(LogicalExpr {
-                    left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
-                    op: self.convert_logical_op(op),
-                    right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
-                }))
+            Expression::Cast(cast_expr) => {
+                Self::collect_column_indices(&cast_expr.expr, indices);
             }
-            ProjectionExpression::Case { condition, then_expr, else_expr } => {
-                Ok(Expression::Case(CaseExpr {
-                    condition: Box::new(self.convert_projection_to_expression(condition, input_schema)?),
-                    then_expr: Box::new(self.convert_projection_to_expression(then_expr, input_schema)?),
-                    else_expr: Box::new(self.convert_projection_to_expression(else_expr, input_schema)?),
-                }))
-            }
+            _ => {} // 其他表达式类型不包含列引用
         }
     }
 
-    /// 转换比较操作符
-    fn convert_comparison_op(&self, op: &ComparisonOp) -> crate::expression::ast::ComparisonOp {
-        match op {
-            ComparisonOp::Equal => crate::expression::ast::ComparisonOp::Equal,
-            ComparisonOp::NotEqual => crate::expression::ast::ComparisonOp::NotEqual,
-            ComparisonOp::LessThan => crate::expression::ast::ComparisonOp::LessThan,
-            ComparisonOp::LessThanOrEqual => crate::expression::ast::ComparisonOp::LessThanOrEqual,
-            ComparisonOp::GreaterThan => crate::expression::ast::ComparisonOp::GreaterThan,
-            ComparisonOp::GreaterThanOrEqual => crate::expression::ast::ComparisonOp::GreaterThanOrEqual,
-            ComparisonOp::Like => crate::expression::ast::ComparisonOp::Like,
-            ComparisonOp::IsNull => crate::expression::ast::ComparisonOp::IsNull,
-            ComparisonOp::IsNotNull => crate::expression::ast::ComparisonOp::IsNotNull,
-        }
-    }
-
-    /// 转换逻辑操作符
-    fn convert_logical_op(&self, op: &LogicalOp) -> crate::expression::ast::LogicalOp {
-        match op {
-            LogicalOp::And => crate::expression::ast::LogicalOp::And,
-            LogicalOp::Or => crate::expression::ast::LogicalOp::Or,
-            LogicalOp::Not => crate::expression::ast::LogicalOp::Not,
-        }
-    }
-
-    /// 转换算术操作符
-    fn convert_arithmetic_op(&self, op: &ArithmeticOp) -> ExprArithmeticOp {
-        match op {
-            ArithmeticOp::Add => ExprArithmeticOp::Add,
-            ArithmeticOp::Subtract => ExprArithmeticOp::Subtract,
-            ArithmeticOp::Multiply => ExprArithmeticOp::Multiply,
-            ArithmeticOp::Divide => ExprArithmeticOp::Divide,
-            ArithmeticOp::Modulo => ExprArithmeticOp::Modulo,
-            ArithmeticOp::Power => ExprArithmeticOp::Power,
-        }
-    }
 
 
     /// 创建字面量数组
@@ -327,124 +227,17 @@ impl VectorizedProjector {
         }
     }
 
-    /// 计算算术表达式
-    fn evaluate_arithmetic_expression_static(left: &ProjectionExpression, op: &ArithmeticOp, right: &ProjectionExpression, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，返回左操作数
-        Self::evaluate_expression_static(left, batch)
-    }
 
-    /// 计算比较表达式
-    fn evaluate_comparison_expression_static(left: &ProjectionExpression, op: &ComparisonOp, right: &ProjectionExpression, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，返回全true的布尔数组
-        let len = batch.num_rows();
-        let array = BooleanArray::from(vec![true; len]);
-        Ok(Arc::new(array))
-    }
-
-    /// 计算逻辑表达式
-    fn evaluate_logical_expression_static(left: &ProjectionExpression, op: &LogicalOp, right: &ProjectionExpression, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，返回全true的布尔数组
-        let len = batch.num_rows();
-        let array = BooleanArray::from(vec![true; len]);
-        Ok(Arc::new(array))
-    }
-
-    /// 计算函数表达式
-    fn evaluate_function_expression_static(name: &str, args: &[ProjectionExpression], batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，返回第一个参数的数组
-        if let Some(first_arg) = args.first() {
-            Self::evaluate_expression_static(first_arg, batch)
-        } else {
-            Err("Function requires at least one argument".to_string())
-        }
-    }
-
-    /// 计算CASE表达式
-    fn evaluate_case_expression_static(conditions: &[(ProjectionExpression, ProjectionExpression)], else_expr: Option<&ProjectionExpression>, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，返回第一个条件的结果
-        if let Some((_, result)) = conditions.first() {
-            Self::evaluate_expression_static(result, batch)
-        } else if let Some(else_expr) = else_expr {
-            Self::evaluate_expression_static(else_expr, batch)
-        } else {
-            Err("CASE expression requires at least one condition or else clause".to_string())
-        }
-    }
-
-    /// 计算类型转换表达式
-    fn evaluate_cast_expression_static(expr: &ProjectionExpression, target_type: &DataType, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 简化的实现，直接返回原表达式的结果
-        Self::evaluate_expression_static(expr, batch)
-    }
-
-    /// 从表达式中提取列索引
-    fn extract_column_indices(expressions: &[ProjectionExpression]) -> Vec<usize> {
-        let mut indices = std::collections::HashSet::new();
-        
-        for expr in expressions {
-            Self::extract_column_indices_from_expr(expr, &mut indices);
-        }
-        
-        indices.into_iter().collect()
-    }
-
-    /// 递归提取表达式中的列索引
-    fn extract_column_indices_from_expr(expr: &ProjectionExpression, indices: &mut std::collections::HashSet<usize>) {
-        match expr {
-            ProjectionExpression::Column { index, .. } => {
-                indices.insert(*index);
-            },
-            ProjectionExpression::Arithmetic { left, right, .. } => {
-                Self::extract_column_indices_from_expr(left, indices);
-                Self::extract_column_indices_from_expr(right, indices);
-            },
-            ProjectionExpression::Comparison { left, right, .. } => {
-                Self::extract_column_indices_from_expr(left, indices);
-                Self::extract_column_indices_from_expr(right, indices);
-            },
-            ProjectionExpression::Logical { left, right, .. } => {
-                Self::extract_column_indices_from_expr(left, indices);
-                Self::extract_column_indices_from_expr(right, indices);
-            },
-            ProjectionExpression::Function { args, .. } => {
-                for arg in args {
-                    Self::extract_column_indices_from_expr(arg, indices);
-                }
-            },
-            ProjectionExpression::Case { condition, then_expr, else_expr } => {
-                Self::extract_column_indices_from_expr(condition, indices);
-                Self::extract_column_indices_from_expr(then_expr, indices);
-                Self::extract_column_indices_from_expr(else_expr, indices);
-            },
-            ProjectionExpression::Cast { expr, .. } => {
-                Self::extract_column_indices_from_expr(expr, indices);
-            },
-            ProjectionExpression::Literal { .. } => {
-                // 常量不涉及列访问
-            },
-        }
-    }
 
     /// 向量化投影
     pub fn project(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
         let start = Instant::now();
         
-        // 如果还没有编译表达式，先编译
-        if self.compiled_expressions.is_empty() {
-            for expr in &self.expressions {
-                let expression = self.convert_projection_to_expression(expr, &batch.schema())
-                    .map_err(|e| e.to_string())?;
-                let compiled = self.expression_engine.compile(&expression)
-                    .map_err(|e| e.to_string())?;
-                self.compiled_expressions.push(compiled);
-            }
-        }
-        
-        // 使用表达式引擎计算投影表达式
-        let projected_columns: Result<Vec<ArrayRef>, String> = self.compiled_expressions
+        // 直接使用表达式引擎计算投影表达式
+        let projected_columns: Result<Vec<ArrayRef>, String> = self.expressions
             .iter()
-            .map(|compiled_expr| {
-                self.expression_engine.execute(compiled_expr, batch)
+            .map(|expr| {
+                self.expression_engine.execute(expr, batch)
                     .map_err(|e| e.to_string())
             })
             .collect();
@@ -464,15 +257,6 @@ impl VectorizedProjector {
     }
 
     
-    /// 计算投影表达式 - 使用表达式求值框架
-    fn evaluate_expression(&mut self, expr: &ProjectionExpression, batch: &RecordBatch) -> Result<ArrayRef, String> {
-        // 转换为表达式引擎的表达式
-        let expression = self.convert_projection_to_expression(expr, batch.schema())?;
-        
-        // 使用表达式引擎计算
-        self.expression_engine.execute(&expression, batch)
-            .map_err(|e| e.to_string())
-    }
 
     /// 创建常量数组
     fn create_literal_array(&self, value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
@@ -589,7 +373,7 @@ impl BatchProjectorProcessor {
     }
 
     /// 添加投影器
-    pub fn add_projector(&mut self, expressions: Vec<ProjectionExpression>, output_schema: SchemaRef) -> Result<()> {
+    pub fn add_projector(&mut self, expressions: Vec<Expression>, output_schema: SchemaRef) -> Result<()> {
         let projector = VectorizedProjector::new(
             self.config.clone(), 
             expressions, 
@@ -633,7 +417,7 @@ impl ProjectorOptimizer {
     
 
     /// 优化投影表达式
-    pub fn optimize_expressions(&self, expressions: &[ProjectionExpression]) -> Vec<ProjectionExpression> {
+    pub fn optimize_expressions(&self, expressions: &[Expression]) -> Vec<Expression> {
         // 实现表达式优化逻辑
         // 1. 常量折叠
         // 2. 表达式重排序
@@ -643,28 +427,29 @@ impl ProjectorOptimizer {
     }
 
     /// 分析表达式复杂度
-    pub fn analyze_complexity(&self, expr: &ProjectionExpression) -> usize {
+    pub fn analyze_complexity(&self, expr: &Expression) -> usize {
         match expr {
-            ProjectionExpression::Column { .. } => 1,
-            ProjectionExpression::Literal { .. } => 1,
-            ProjectionExpression::Arithmetic { left, right, .. } => {
-                1 + self.analyze_complexity(left) + self.analyze_complexity(right)
+            Expression::Column(_) => 1,
+            Expression::Literal(_) => 1,
+            Expression::Arithmetic(arithmetic) => {
+                1 + self.analyze_complexity(&arithmetic.left) + self.analyze_complexity(&arithmetic.right)
             },
-            ProjectionExpression::Comparison { left, right, .. } => {
-                1 + self.analyze_complexity(left) + self.analyze_complexity(right)
+            Expression::Comparison(comparison) => {
+                1 + self.analyze_complexity(&comparison.left) + self.analyze_complexity(&comparison.right)
             },
-            ProjectionExpression::Logical { left, right, .. } => {
-                1 + self.analyze_complexity(left) + self.analyze_complexity(right)
+            Expression::Logical(logical) => {
+                1 + self.analyze_complexity(&logical.left) + self.analyze_complexity(&logical.right)
             },
-            ProjectionExpression::Function { args, .. } => {
-                1 + args.iter().map(|arg| self.analyze_complexity(arg)).sum::<usize>()
+            Expression::Function(function_call) => {
+                1 + function_call.args.iter().map(|arg| self.analyze_complexity(arg)).sum::<usize>()
             },
-            ProjectionExpression::Case { condition, then_expr, else_expr } => {
-                1 + self.analyze_complexity(condition) + self.analyze_complexity(then_expr) + self.analyze_complexity(else_expr)
+            Expression::Case(case_expr) => {
+                1 + self.analyze_complexity(&case_expr.condition) + self.analyze_complexity(&case_expr.then_expr) + self.analyze_complexity(&case_expr.else_expr)
             },
-            ProjectionExpression::Cast { expr, .. } => {
-                1 + self.analyze_complexity(expr)
+            Expression::Cast(cast_expr) => {
+                1 + self.analyze_complexity(&cast_expr.expr)
             },
+            _ => 1, // 其他表达式类型
         }
     }
     
