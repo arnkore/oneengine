@@ -16,7 +16,6 @@
  */
 
 
-pub mod vectorized_operator;
 // pub mod scheduler; // 暂时注释掉，未使用，实际使用的是src/scheduler/push_scheduler.rs
 pub mod operators;
 // pub mod numa_pipeline; // 暂时注释掉，未使用
@@ -28,5 +27,4 @@ pub mod worker;
 pub mod vectorized_driver;
 pub mod engine;
 pub mod pipeline;
-pub mod task_operator;
 pub mod task;
