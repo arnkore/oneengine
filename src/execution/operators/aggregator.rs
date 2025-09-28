@@ -18,7 +18,7 @@
 
 //! 列式聚合器
 //! 
-//! 提供完全面向列式的、全向量化极致优化的聚合算子实现
+//! 基于表达式引擎的完全面向列式的、全向量化极致优化的聚合算子实现
 
 use arrow::array::*;
 use arrow::compute::*;
@@ -31,6 +31,8 @@ use std::time::Instant;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::ast::{Expression, ColumnRef, Literal, LiteralValue, DataType as ExprDataType, AggregateExpr, AggregateOp, FunctionCall};
 use anyhow::Result;
 
 /// 列式向量化聚合器配置
@@ -233,7 +235,12 @@ impl GroupKeyHasher {
 /// 列式向量化聚合器
 pub struct VectorizedAggregator {
     config: VectorizedAggregatorConfig,
+    /// 表达式引擎
+    expression_engine: VectorizedExpressionEngine,
+    /// 编译后的聚合表达式
+    compiled_aggregations: Vec<CompiledExpression>,
     group_columns: Vec<usize>,
+    /// 原始聚合函数（用于兼容性）
     agg_functions: Vec<AggregationFunction>,
     group_hasher: GroupKeyHasher,
     agg_states: Vec<Vec<AggregationState>>,
@@ -272,12 +279,28 @@ impl VectorizedAggregator {
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
         name: String,
-    ) -> Self {
+    ) -> Result<Self> {
         let group_hasher = GroupKeyHasher::new(group_columns.clone());
         let agg_states = Vec::new();
         
-        Self {
+        // 创建表达式引擎配置
+        let expression_config = ExpressionEngineConfig {
+            enable_jit: config.enable_simd,
+            enable_simd: config.enable_simd,
+            enable_fusion: true,
+            enable_cache: true,
+            jit_threshold: 100,
+            cache_size_limit: 1024 * 1024 * 1024, // 1GB
+            batch_size: config.batch_size,
+        };
+        
+        // 创建表达式引擎
+        let expression_engine = VectorizedExpressionEngine::new(expression_config)?;
+        
+        Ok(Self {
             config,
+            expression_engine,
+            compiled_aggregations: Vec::new(),
             group_columns,
             agg_functions,
             group_hasher,
@@ -289,12 +312,130 @@ impl VectorizedAggregator {
             finished: false,
             name,
             results_sent: false,
+        })
+    }
+
+    /// 将Arrow DataType转换为表达式DataType
+    fn convert_arrow_to_expr_data_type(&self, data_type: &DataType) -> ExprDataType {
+        match data_type {
+            DataType::Boolean => ExprDataType::Boolean,
+            DataType::Int8 => ExprDataType::Int8,
+            DataType::Int16 => ExprDataType::Int16,
+            DataType::Int32 => ExprDataType::Int32,
+            DataType::Int64 => ExprDataType::Int64,
+            DataType::UInt8 => ExprDataType::UInt8,
+            DataType::UInt16 => ExprDataType::UInt16,
+            DataType::UInt32 => ExprDataType::UInt32,
+            DataType::UInt64 => ExprDataType::UInt64,
+            DataType::Float32 => ExprDataType::Float32,
+            DataType::Float64 => ExprDataType::Float64,
+            DataType::Utf8 => ExprDataType::String,
+            DataType::LargeUtf8 => ExprDataType::String,
+            DataType::Binary => ExprDataType::Binary,
+            DataType::LargeBinary => ExprDataType::Binary,
+            DataType::Date32 => ExprDataType::Date,
+            DataType::Time64(TimeUnit::Microsecond) => ExprDataType::Time,
+            DataType::Timestamp(_, _) => ExprDataType::Timestamp,
+            DataType::Interval(IntervalUnit::DayTime) => ExprDataType::Interval,
+            _ => ExprDataType::String, // 默认值
+        }
+    }
+
+    /// 将AggregationFunction转换为Expression
+    fn convert_aggregation_to_expression(&self, agg_func: &AggregationFunction, input_schema: &Schema) -> Result<Expression> {
+        match agg_func {
+            AggregationFunction::Sum { column } => {
+                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = input_schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Aggregate(AggregateExpr {
+                    op: AggregateOp::Sum,
+                    expr: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                }))
+            }
+            AggregationFunction::Count { column } => {
+                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = input_schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Aggregate(AggregateExpr {
+                    op: AggregateOp::Count,
+                    expr: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                    return_type: ExprDataType::Int64,
+                }))
+            }
+            AggregationFunction::Avg { column } => {
+                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = input_schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Aggregate(AggregateExpr {
+                    op: AggregateOp::Avg,
+                    expr: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                    return_type: ExprDataType::Float64,
+                }))
+            }
+            AggregationFunction::Min { column } => {
+                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = input_schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Aggregate(AggregateExpr {
+                    op: AggregateOp::Min,
+                    expr: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                }))
+            }
+            AggregationFunction::Max { column } => {
+                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = input_schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Aggregate(AggregateExpr {
+                    op: AggregateOp::Max,
+                    expr: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                    return_type: self.convert_arrow_to_expr_data_type(&data_type),
+                }))
+            }
         }
     }
 
     /// 向量化聚合
     pub fn aggregate(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
         let start = Instant::now();
+        
+        // 如果还没有编译聚合表达式，先编译
+        if self.compiled_aggregations.is_empty() {
+            for agg_func in &self.agg_functions {
+                let expression = self.convert_aggregation_to_expression(agg_func, &batch.schema())
+                    .map_err(|e| e.to_string())?;
+                let compiled = self.expression_engine.compile(&expression)
+                    .map_err(|e| e.to_string())?;
+                self.compiled_aggregations.push(compiled);
+            }
+        }
         
         for row_idx in 0..batch.num_rows() {
             let group_hash = self.group_hasher.compute_hash(batch, row_idx)?;
@@ -310,8 +451,8 @@ impl VectorizedAggregator {
                 self.agg_states[group_id] = self.create_initial_agg_states();
             }
             
-            // 更新聚合状态
-            self.update_agg_states(group_id, batch, row_idx)?;
+            // 使用表达式引擎更新聚合状态
+            self.update_agg_states_with_expressions(group_id, batch, row_idx)?;
         }
         
         // 生成结果批次
@@ -324,6 +465,105 @@ impl VectorizedAggregator {
                batch.num_rows(), result.num_rows(), duration.as_micros());
         
         Ok(result)
+    }
+
+    /// 使用表达式引擎更新聚合状态
+    fn update_agg_states_with_expressions(&mut self, group_id: usize, batch: &RecordBatch, row_idx: usize) -> Result<(), String> {
+        // 创建单行批次用于表达式计算
+        let single_row_batch = self.create_single_row_batch(batch, row_idx)?;
+        
+        // 计算所有聚合表达式
+        let mut results = Vec::new();
+        for compiled_expr in &self.compiled_aggregations {
+            let result = self.expression_engine.execute(compiled_expr, &single_row_batch)
+                .map_err(|e| e.to_string())?;
+            results.push(result);
+        }
+        
+        // 更新聚合状态
+        for (i, result) in results.iter().enumerate() {
+            self.update_agg_state_from_result(group_id, i, result)?;
+        }
+        Ok(())
+    }
+
+    /// 创建单行批次
+    fn create_single_row_batch(&self, batch: &RecordBatch, row_idx: usize) -> Result<RecordBatch, String> {
+        let single_row_columns: Result<Vec<ArrayRef>, String> = batch
+            .columns()
+            .iter()
+            .map(|col| {
+                // 提取单行数据
+                let single_row = col.slice(row_idx, 1);
+                Ok(single_row)
+            })
+            .collect();
+        
+        let single_row_columns = single_row_columns?;
+        RecordBatch::try_new(batch.schema(), single_row_columns)
+            .map_err(|e| e.to_string())
+    }
+
+    /// 从表达式结果更新聚合状态
+    fn update_agg_state_from_result(&mut self, group_id: usize, agg_idx: usize, result: &ArrayRef) -> Result<(), String> {
+        if group_id >= self.agg_states.len() || agg_idx >= self.agg_states[group_id].len() {
+            return Err("Invalid group_id or agg_idx".to_string());
+        }
+
+        let state = &mut self.agg_states[group_id][agg_idx];
+        let value = Self::extract_scalar_value_from_array(result, 0)?;
+
+        match state {
+            AggregationState::Count { count } => {
+                *count += 1;
+            }
+            AggregationState::Sum { sum } => {
+                *sum = Self::add_scalar_values_static(sum, &value)?;
+            }
+            AggregationState::Avg { sum, count } => {
+                *sum = Self::add_scalar_values_static(sum, &value)?;
+                *count += 1;
+            }
+            AggregationState::Min { min } => {
+                if min.is_none() || Self::compare_scalar_values_static(&value, min.as_ref().unwrap())? < 0 {
+                    *min = Some(value);
+                }
+            }
+            AggregationState::Max { max } => {
+                if max.is_none() || Self::compare_scalar_values_static(&value, max.as_ref().unwrap())? > 0 {
+                    *max = Some(value);
+                }
+            }
+            _ => {
+                // 其他聚合函数的状态更新
+                return Err("Unsupported aggregation state for expression engine".to_string());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 从数组中提取标量值
+    fn extract_scalar_value_from_array(array: &ArrayRef, index: usize) -> Result<ScalarValue, String> {
+        match array.data_type() {
+            DataType::Int32 => {
+                let array = array.as_any().downcast_ref::<Int32Array>().unwrap();
+                Ok(ScalarValue::Int32(Some(array.value(index))))
+            }
+            DataType::Int64 => {
+                let array = array.as_any().downcast_ref::<Int64Array>().unwrap();
+                Ok(ScalarValue::Int64(Some(array.value(index))))
+            }
+            DataType::Float32 => {
+                let array = array.as_any().downcast_ref::<Float32Array>().unwrap();
+                Ok(ScalarValue::Float32(Some(array.value(index))))
+            }
+            DataType::Float64 => {
+                let array = array.as_any().downcast_ref::<Float64Array>().unwrap();
+                Ok(ScalarValue::Float64(Some(array.value(index))))
+            }
+            _ => Err(format!("Unsupported data type: {:?}", array.data_type())),
+        }
     }
 
     /// 创建初始聚合状态

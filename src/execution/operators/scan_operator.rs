@@ -17,7 +17,7 @@
 
 //! 扫描算子
 //! 
-//! 集成湖仓读取器与向量化算子的扫描算子
+//! 基于表达式引擎的集成湖仓读取器与向量化算子的扫描算子
 
 use arrow::array::*;
 use arrow::datatypes::*;
@@ -27,6 +27,8 @@ use std::time::Instant;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::datalake::unified_lake_reader::*;
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::ast::{Expression, ColumnRef, Literal, LiteralValue, DataType as ExprDataType, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp};
 use anyhow::Result;
 
 /// 向量化扫描算子配置
@@ -57,6 +59,10 @@ impl Default for VectorizedScanConfig {
 pub struct VectorizedScanOperator {
     config: VectorizedScanConfig,
     lake_reader: UnifiedLakeReader,
+    /// 表达式引擎
+    expression_engine: VectorizedExpressionEngine,
+    /// 编译后的过滤表达式
+    compiled_predicate: Option<CompiledExpression>,
     /// 算子ID
     operator_id: u32,
     /// 输入端口
@@ -104,12 +110,28 @@ impl VectorizedScanOperator {
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
         name: String,
-    ) -> Self {
+    ) -> Result<Self> {
         let lake_reader = UnifiedLakeReader::new(config.lake_reader_config.clone());
         
-        Self {
+        // 创建表达式引擎配置
+        let expression_config = ExpressionEngineConfig {
+            enable_jit: config.enable_simd,
+            enable_simd: config.enable_simd,
+            enable_fusion: true,
+            enable_cache: true,
+            jit_threshold: 100,
+            cache_size_limit: 1024 * 1024 * 1024, // 1GB
+            batch_size: config.lake_reader_config.batch_size,
+        };
+        
+        // 创建表达式引擎
+        let expression_engine = VectorizedExpressionEngine::new(expression_config)?;
+        
+        Ok(Self {
             config,
             lake_reader,
+            expression_engine,
+            compiled_predicate: None,
             operator_id,
             input_ports,
             output_ports,
@@ -121,7 +143,7 @@ impl VectorizedScanOperator {
             current_snapshot_id: None,
             table_metadata: None,
             stats: ScanStats::default(),
-        }
+        })
     }
 
     /// 设置要扫描的表路径
@@ -131,6 +153,40 @@ impl VectorizedScanOperator {
         self.total_batches = 0;
         self.finished = false;
         self.current_snapshot_id = None;
+    }
+
+    /// 设置过滤谓词
+    pub fn set_predicate(&mut self, predicate: Expression) -> Result<()> {
+        let compiled = self.expression_engine.compile(&predicate)?;
+        self.compiled_predicate = Some(compiled);
+        Ok(())
+    }
+
+    /// 应用过滤谓词
+    fn apply_predicate(&mut self, batch: &RecordBatch) -> Result<RecordBatch> {
+        if let Some(ref compiled_predicate) = self.compiled_predicate {
+            // 使用表达式引擎执行过滤
+            let mask_result = self.expression_engine.execute(compiled_predicate, batch)?;
+            
+            // 将结果转换为BooleanArray
+            let mask = mask_result.as_any().downcast_ref::<BooleanArray>()
+                .ok_or_else(|| anyhow::anyhow!("Expression result is not a boolean array"))?;
+            
+            // 使用Arrow compute kernel进行过滤
+            let filtered_columns: Result<Vec<ArrayRef>, arrow::error::ArrowError> = batch
+                .columns()
+                .iter()
+                .map(|col| arrow::compute::filter(col, mask))
+                .collect();
+            
+            let filtered_columns = filtered_columns?;
+            let filtered_schema = batch.schema();
+            
+            Ok(RecordBatch::try_new(filtered_schema, filtered_columns)?)
+        } else {
+            // 没有过滤谓词，直接返回原批次
+            Ok(batch.clone())
+        }
     }
 
     /// 扫描下一个批次
@@ -165,13 +221,17 @@ impl VectorizedScanOperator {
         let batch = batches[self.current_batch_index].clone();
         self.current_batch_index += 1;
         
+        // 应用过滤谓词
+        let filtered_batch = self.apply_predicate(batch)
+            .map_err(|e| format!("Failed to apply predicate: {}", e))?;
+        
         let duration = start.elapsed();
-        self.update_stats(batch.num_rows(), duration);
+        self.update_stats(filtered_batch.num_rows(), duration);
         
-        debug!("扫描批次 {}: {} rows ({}μs)", 
-               self.current_batch_index, batch.num_rows(), duration.as_micros());
+        debug!("扫描批次 {}: {} rows -> {} rows ({}μs)", 
+               self.current_batch_index, batch.num_rows(), filtered_batch.num_rows(), duration.as_micros());
         
-        Ok(Some(batch))
+        Ok(Some(filtered_batch))
     }
 
     /// 应用谓词下推
@@ -377,7 +437,7 @@ impl VectorizedScanOperatorFactory {
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
         name: String,
-    ) -> VectorizedScanOperator {
+    ) -> Result<VectorizedScanOperator> {
         VectorizedScanOperator::new(
             self.config.clone(),
             operator_id,

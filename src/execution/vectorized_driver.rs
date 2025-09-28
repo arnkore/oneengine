@@ -230,7 +230,7 @@ impl VectorizedDriver {
                         node.input_ports.clone(),
                         node.output_ports.clone(),
                         format!("scan_{}", node.operator_id),
-                    );
+                    ).map_err(|e| e.to_string())?;
                     
                     scan_operator.set_table_path(file_path.clone());
                     self.event_loop.register_operator(
@@ -253,7 +253,7 @@ impl VectorizedDriver {
                         node.input_ports.clone(),
                         node.output_ports.clone(),
                         format!("filter_{}", node.operator_id),
-                    );
+                    ).map_err(|e| e.to_string())?;
                     
                     filter_operator.set_column_index(*column_index);
                     self.event_loop.register_operator(
@@ -277,7 +277,7 @@ impl VectorizedDriver {
                         node.input_ports.clone(),
                         node.output_ports.clone(),
                         format!("projector_{}", node.operator_id),
-                    );
+                    ).map_err(|e| e.to_string())?;
                     
                     self.event_loop.register_operator(
                         node.operator_id, 
@@ -300,7 +300,7 @@ impl VectorizedDriver {
                         node.input_ports.clone(),
                         node.output_ports.clone(),
                         format!("aggregator_{}", node.operator_id),
-                    );
+                    ).map_err(|e| e.to_string())?;
                     
                     self.event_loop.register_operator(
                         node.operator_id, 

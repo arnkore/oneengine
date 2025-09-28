@@ -18,18 +18,20 @@
 
 //! 列式过滤器
 //! 
-//! 基于表达式引擎的向量化过滤算子实现
+//! 基于表达式引擎的完全面向列式的、全向量化极致优化的过滤算子实现
 
 use arrow::array::*;
 use arrow::compute::*;
 use arrow::datatypes::*;
 use arrow::record_batch::RecordBatch;
+use arrow::error::ArrowError;
+use datafusion_common::ScalarValue;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, warn};
-use crate::execution::push_runtime::{Operator, OpStatus, Outbox, PortId};
+use tracing::{debug, info, warn};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::Expression;
+use crate::expression::ast::{Expression, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp, ColumnRef, Literal, LiteralValue, DataType as ExprDataType};
 use anyhow::Result;
 
 /// 列式向量化过滤器配置
@@ -85,6 +87,11 @@ pub enum FilterPredicate {
 /// 列式向量化过滤器
 pub struct VectorizedFilter {
     config: VectorizedFilterConfig,
+    /// 表达式引擎
+    expression_engine: VectorizedExpressionEngine,
+    /// 编译后的过滤表达式
+    compiled_predicate: Option<CompiledExpression>,
+    /// 原始过滤谓词（用于兼容性）
     predicate: FilterPredicate,
     column_index: Option<usize>,
     cached_mask: Option<BooleanArray>,
@@ -119,9 +126,25 @@ impl VectorizedFilter {
         input_ports: Vec<PortId>,
         output_ports: Vec<PortId>,
         name: String,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        // 创建表达式引擎配置
+        let expression_config = ExpressionEngineConfig {
+            enable_jit: config.enable_simd,
+            enable_simd: config.enable_simd,
+            enable_fusion: true,
+            enable_cache: true,
+            jit_threshold: 100,
+            cache_size_limit: 1024 * 1024 * 1024, // 1GB
+            batch_size: config.batch_size,
+        };
+        
+        // 创建表达式引擎
+        let expression_engine = VectorizedExpressionEngine::new(expression_config)?;
+        
+        Ok(Self {
             config,
+            expression_engine,
+            compiled_predicate: None,
             predicate,
             column_index: None,
             cached_mask: None,
@@ -131,7 +154,7 @@ impl VectorizedFilter {
             output_ports,
             finished: false,
             name,
-        }
+        })
     }
 
     /// 设置列索引
@@ -139,37 +162,197 @@ impl VectorizedFilter {
         self.column_index = Some(index);
     }
 
+    /// 将Arrow DataType转换为表达式DataType
+    fn convert_arrow_to_expr_data_type(&self, data_type: &DataType) -> ExprDataType {
+        match data_type {
+            DataType::Boolean => ExprDataType::Boolean,
+            DataType::Int8 => ExprDataType::Int8,
+            DataType::Int16 => ExprDataType::Int16,
+            DataType::Int32 => ExprDataType::Int32,
+            DataType::Int64 => ExprDataType::Int64,
+            DataType::UInt8 => ExprDataType::UInt8,
+            DataType::UInt16 => ExprDataType::UInt16,
+            DataType::UInt32 => ExprDataType::UInt32,
+            DataType::UInt64 => ExprDataType::UInt64,
+            DataType::Float32 => ExprDataType::Float32,
+            DataType::Float64 => ExprDataType::Float64,
+            DataType::Utf8 => ExprDataType::String,
+            DataType::LargeUtf8 => ExprDataType::String,
+            DataType::Binary => ExprDataType::Binary,
+            DataType::LargeBinary => ExprDataType::Binary,
+            DataType::Date32 => ExprDataType::Date,
+            DataType::Time64(TimeUnit::Microsecond) => ExprDataType::Time,
+            DataType::Timestamp(_, _) => ExprDataType::Timestamp,
+            DataType::Interval(IntervalUnit::DayTime) => ExprDataType::Interval,
+            _ => ExprDataType::String, // 默认值
+        }
+    }
+
+    /// 将FilterPredicate转换为Expression
+    fn convert_predicate_to_expression(&self, predicate: &FilterPredicate, schema: &Schema) -> Result<Expression> {
+        match predicate {
+            FilterPredicate::Equal { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::Equal,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: self.scalar_value_to_literal_value(value)?,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                }))
+            }
+            FilterPredicate::NotEqual { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::NotEqual,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: self.scalar_value_to_literal_value(value)?,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                }))
+            }
+            FilterPredicate::GreaterThan { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::GreaterThan,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: self.scalar_value_to_literal_value(value)?,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                }))
+            }
+            FilterPredicate::LessThan { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::LessThan,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: self.scalar_value_to_literal_value(value)?,
+                        data_type: self.convert_arrow_to_expr_data_type(&data_type),
+                    })),
+                }))
+            }
+            FilterPredicate::And { left, right } => {
+                Ok(Expression::Logical(LogicalExpr {
+                    left: Box::new(self.convert_predicate_to_expression(left, schema)?),
+                    op: LogicalOp::And,
+                    right: Box::new(self.convert_predicate_to_expression(right, schema)?),
+                }))
+            }
+            FilterPredicate::Or { left, right } => {
+                Ok(Expression::Logical(LogicalExpr {
+                    left: Box::new(self.convert_predicate_to_expression(left, schema)?),
+                    op: LogicalOp::Or,
+                    right: Box::new(self.convert_predicate_to_expression(right, schema)?),
+                }))
+            }
+            FilterPredicate::Not { predicate } => {
+                Ok(Expression::Logical(LogicalExpr {
+                    left: Box::new(self.convert_predicate_to_expression(predicate, schema)?),
+                    op: LogicalOp::Not,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: LiteralValue::Boolean(false),
+                        data_type: DataType::Boolean,
+                    })),
+                }))
+            }
+        }
+    }
+
+    /// 将ScalarValue转换为LiteralValue
+    fn scalar_value_to_literal_value(&self, value: &ScalarValue) -> Result<LiteralValue> {
+        match value {
+            ScalarValue::Boolean(Some(v)) => Ok(LiteralValue::Boolean(*v)),
+            ScalarValue::Int8(Some(v)) => Ok(LiteralValue::Int8(*v)),
+            ScalarValue::Int16(Some(v)) => Ok(LiteralValue::Int16(*v)),
+            ScalarValue::Int32(Some(v)) => Ok(LiteralValue::Int32(*v)),
+            ScalarValue::Int64(Some(v)) => Ok(LiteralValue::Int64(*v)),
+            ScalarValue::UInt8(Some(v)) => Ok(LiteralValue::UInt8(*v)),
+            ScalarValue::UInt16(Some(v)) => Ok(LiteralValue::UInt16(*v)),
+            ScalarValue::UInt32(Some(v)) => Ok(LiteralValue::UInt32(*v)),
+            ScalarValue::UInt64(Some(v)) => Ok(LiteralValue::UInt64(*v)),
+            ScalarValue::Float32(Some(v)) => Ok(LiteralValue::Float32(*v)),
+            ScalarValue::Float64(Some(v)) => Ok(LiteralValue::Float64(*v)),
+            ScalarValue::Utf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
+            ScalarValue::LargeUtf8(Some(v)) => Ok(LiteralValue::String(v.clone())),
+            ScalarValue::Binary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
+            ScalarValue::LargeBinary(Some(v)) => Ok(LiteralValue::Binary(v.clone())),
+            _ => Err(anyhow::anyhow!("Unsupported scalar value type: {:?}", value)),
+        }
+    }
+
     /// 向量化过滤
     pub fn filter(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
         let start = Instant::now();
         
-        if let Some(column_index) = self.column_index {
-            let column = batch.column(column_index);
-            let mask = self.compute_filter_mask(column)?;
-            
-            // 使用Arrow compute kernel进行过滤
-            let filtered_columns: Result<Vec<ArrayRef>, ArrowError> = batch
-                .columns()
-                .iter()
-                .map(|col| filter(col, &mask))
-                .collect();
-            
-            let filtered_columns = filtered_columns.map_err(|e| e.to_string())?;
-            let filtered_schema = batch.schema();
-            
-            let result = RecordBatch::try_new(filtered_schema, filtered_columns)
+        // 如果还没有编译表达式，先编译
+        if self.compiled_predicate.is_none() {
+            let expression = self.convert_predicate_to_expression(&self.predicate, &batch.schema())
                 .map_err(|e| e.to_string())?;
-            
-            let duration = start.elapsed();
-            self.update_stats(batch.num_rows(), result.num_rows(), duration);
-            
-            debug!("向量化过滤完成: {} rows -> {} rows ({}μs)", 
-                   batch.num_rows(), result.num_rows(), duration.as_micros());
-            
-            Ok(result)
-        } else {
-            Err("Column index not set".to_string())
+            self.compiled_predicate = Some(self.expression_engine.compile(&expression)
+                .map_err(|e| e.to_string())?);
         }
+        
+        // 使用表达式引擎执行过滤
+        let mask_array = self.compiled_predicate.as_ref().unwrap();
+        let mask_result = self.expression_engine.execute(mask_array, batch)
+            .map_err(|e| e.to_string())?;
+        
+        // 将结果转换为BooleanArray
+        let mask = mask_result.as_any().downcast_ref::<BooleanArray>()
+            .ok_or_else(|| "Expression result is not a boolean array".to_string())?;
+        
+        // 使用Arrow compute kernel进行过滤
+        let filtered_columns: Result<Vec<ArrayRef>, ArrowError> = batch
+            .columns()
+            .iter()
+            .map(|col| filter(col, mask))
+            .collect();
+        
+        let filtered_columns = filtered_columns.map_err(|e| e.to_string())?;
+        let filtered_schema = batch.schema();
+        
+        let result = RecordBatch::try_new(filtered_schema, filtered_columns)
+            .map_err(|e| e.to_string())?;
+        
+        let duration = start.elapsed();
+        self.update_stats(batch.num_rows(), result.num_rows(), duration);
+        
+        debug!("向量化过滤完成: {} rows -> {} rows ({}μs)", 
+               batch.num_rows(), result.num_rows(), duration.as_micros());
+        
+        Ok(result)
     }
 
     /// 计算过滤掩码
