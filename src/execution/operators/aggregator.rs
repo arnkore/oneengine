@@ -31,7 +31,7 @@ use std::time::Instant;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
-use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
 use crate::expression::ast::{Expression, ColumnRef, Literal, AggregateExpr, FunctionCall};
 use anyhow::Result;
 
@@ -248,7 +248,7 @@ pub struct VectorizedAggregator {
     /// 表达式引擎
     expression_engine: VectorizedExpressionEngine,
     /// 编译后的聚合表达式
-    compiled_aggregations: Vec<CompiledExpression>,
+    compiled_aggregations: Vec<Expression>,
     group_columns: Vec<usize>,
     /// 原始聚合函数（用于兼容性）
     agg_functions: Vec<AggregationFunction>,

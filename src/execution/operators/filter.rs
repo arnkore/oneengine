@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
-use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
 use crate::expression::ast::{Expression, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp, ColumnRef, Literal};
 use anyhow::Result;
 
@@ -90,7 +90,7 @@ pub struct VectorizedFilter {
     /// 表达式引擎
     expression_engine: VectorizedExpressionEngine,
     /// 编译后的过滤表达式
-    compiled_predicate: Option<CompiledExpression>,
+    compiled_predicate: Option<Expression>,
     /// 原始过滤谓词（用于兼容性）
     predicate: FilterPredicate,
     column_index: Option<usize>,

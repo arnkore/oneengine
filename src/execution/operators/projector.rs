@@ -30,7 +30,7 @@ use std::time::Instant;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
-use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
 use crate::expression::ast::{Expression, ColumnRef, Literal, ArithmeticExpr, ArithmeticOp as ExprArithmeticOp, FunctionCall, CastExpr, ComparisonExpr, LogicalExpr, CaseExpr};
 use datafusion_common::ScalarValue;
 use anyhow::Result;
@@ -120,7 +120,7 @@ pub struct VectorizedProjector {
     /// 表达式引擎
     expression_engine: VectorizedExpressionEngine,
     /// 编译后的投影表达式
-    compiled_expressions: Vec<CompiledExpression>,
+    compiled_expressions: Vec<Expression>,
     /// 原始投影表达式（用于兼容性）
     expressions: Vec<ProjectionExpression>,
     output_schema: SchemaRef,

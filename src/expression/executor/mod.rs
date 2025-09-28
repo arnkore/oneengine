@@ -20,12 +20,9 @@
 //! 提供向量化表达式执行功能
 
 pub mod vectorized_executor;
-pub mod simd_executor;
-pub mod scalar_executor;
 pub mod expression_executor_impl;
 
 use crate::expression::ast::Expression;
-use crate::expression::jit::JitFunction;
 use crate::expression::ExpressionEngineConfig;
 use anyhow::Result;
 use arrow::array::ArrayRef;
@@ -47,18 +44,11 @@ impl VectorizedExecutor {
         })
     }
 
-    /// 执行JIT函数
-    pub fn execute_jit(&self, jit_function: &JitFunction, batch: &RecordBatch) -> Result<ArrayRef> {
+    /// 执行表达式
+    pub fn execute_interpreted(&self, expression: &Expression, batch: &RecordBatch) -> Result<ArrayRef> {
         self.execution_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        jit_function(batch)
-    }
-
-    /// 执行解释表达式
-    pub fn execute_interpreted(&self, _expression: &Expression, _batch: &RecordBatch) -> Result<ArrayRef> {
-        // TODO: 实现解释执行
-        use arrow::array::*;
-        use arrow::datatypes::*;
-        Ok(Arc::new(Int32Array::from(vec![1, 2, 3])) as ArrayRef)
+        use crate::expression::executor::expression_executor_impl::ExpressionExecutorImpl;
+        ExpressionExecutorImpl::execute(expression, batch)
     }
 
     /// 获取执行次数

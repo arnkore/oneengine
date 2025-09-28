@@ -27,7 +27,7 @@ use std::time::Instant;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::datalake::unified_lake_reader::*;
-use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
+use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
 use crate::expression::ast::{Expression, ColumnRef, Literal, ComparisonExpr, ComparisonOp, LogicalExpr, LogicalOp};
 use anyhow::Result;
 
@@ -62,7 +62,7 @@ pub struct VectorizedScanOperator {
     /// 表达式引擎
     expression_engine: VectorizedExpressionEngine,
     /// 编译后的过滤表达式
-    compiled_predicate: Option<CompiledExpression>,
+    compiled_predicate: Option<Expression>,
     /// 算子ID
     operator_id: u32,
     /// 输入端口
