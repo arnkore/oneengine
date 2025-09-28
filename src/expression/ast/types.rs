@@ -121,7 +121,7 @@ impl DataTypeExt for DataType {
             
             // 数组类型
             (DataType::List(left_element), DataType::List(right_element)) => {
-                if let Some(common_element) = DataTypeExt::common_type(&left_element.data_type(), &right_element.data_type()) {
+                if let Some(common_element) = DataTypeExt::common_type(left_element.data_type(), right_element.data_type()) {
                     Some(DataType::List(arrow::datatypes::Field::new("item", common_element, true).into()))
                 } else {
                     None

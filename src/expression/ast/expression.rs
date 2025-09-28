@@ -181,7 +181,42 @@ pub struct Literal {
 impl Literal {
     /// 获取字面量的数据类型
     pub fn data_type(&self) -> DataType {
-        self.value.data_type()
+        use arrow::datatypes::DataType as ArrowDataType;
+        match self.value.data_type() {
+            arrow::datatypes::DataType::Null => ArrowDataType::Null,
+            arrow::datatypes::DataType::Boolean => ArrowDataType::Boolean,
+            arrow::datatypes::DataType::Int8 => ArrowDataType::Int8,
+            arrow::datatypes::DataType::Int16 => ArrowDataType::Int16,
+            arrow::datatypes::DataType::Int32 => ArrowDataType::Int32,
+            arrow::datatypes::DataType::Int64 => ArrowDataType::Int64,
+            arrow::datatypes::DataType::UInt8 => ArrowDataType::UInt8,
+            arrow::datatypes::DataType::UInt16 => ArrowDataType::UInt16,
+            arrow::datatypes::DataType::UInt32 => ArrowDataType::UInt32,
+            arrow::datatypes::DataType::UInt64 => ArrowDataType::UInt64,
+            arrow::datatypes::DataType::Float32 => ArrowDataType::Float32,
+            arrow::datatypes::DataType::Float64 => ArrowDataType::Float64,
+            arrow::datatypes::DataType::Utf8 => ArrowDataType::Utf8,
+            arrow::datatypes::DataType::LargeUtf8 => ArrowDataType::LargeUtf8,
+            arrow::datatypes::DataType::Binary => ArrowDataType::Binary,
+            arrow::datatypes::DataType::LargeBinary => ArrowDataType::LargeBinary,
+            arrow::datatypes::DataType::Date32 => ArrowDataType::Date32,
+            arrow::datatypes::DataType::Date64 => ArrowDataType::Date64,
+            arrow::datatypes::DataType::Time32(unit) => ArrowDataType::Time32(unit),
+            arrow::datatypes::DataType::Time64(unit) => ArrowDataType::Time64(unit),
+            arrow::datatypes::DataType::Timestamp(unit, tz) => ArrowDataType::Timestamp(unit, tz),
+            arrow::datatypes::DataType::Duration(unit) => ArrowDataType::Duration(unit),
+            arrow::datatypes::DataType::Interval(unit) => ArrowDataType::Interval(unit),
+            arrow::datatypes::DataType::List(field) => ArrowDataType::List(field),
+            arrow::datatypes::DataType::LargeList(field) => ArrowDataType::LargeList(field),
+            arrow::datatypes::DataType::Struct(fields) => ArrowDataType::Struct(fields),
+            arrow::datatypes::DataType::Map(field, sorted) => ArrowDataType::Map(field, sorted),
+            arrow::datatypes::DataType::Union(fields, mode) => ArrowDataType::Union(fields, mode),
+            arrow::datatypes::DataType::Dictionary(key_type, value_type) => ArrowDataType::Dictionary(key_type, value_type),
+            arrow::datatypes::DataType::Decimal(precision, scale) => ArrowDataType::Decimal(precision, scale),
+            arrow::datatypes::DataType::FixedSizeBinary(size) => ArrowDataType::FixedSizeBinary(size),
+            arrow::datatypes::DataType::FixedSizeList(field, size) => ArrowDataType::FixedSizeList(field, size),
+            arrow::datatypes::DataType::RunEndEncoded(run_ends_type, values_type) => ArrowDataType::RunEndEncoded(run_ends_type, values_type),
+        }
     }
 }
 

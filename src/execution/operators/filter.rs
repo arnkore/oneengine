@@ -257,6 +257,160 @@ impl VectorizedFilter {
                     })),
                 }))
             }
+            FilterPredicate::GreaterThanOrEqual { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::GreaterThanOrEqual,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: value.clone(),
+                    })),
+                }))
+            }
+            FilterPredicate::LessThanOrEqual { column, value } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::LessThanOrEqual,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: value.clone(),
+                    })),
+                }))
+            }
+            FilterPredicate::Between { column, min, max } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                // Between A AND B 等价于 A >= min AND A <= max
+                Ok(Expression::Logical(LogicalExpr {
+                    left: Box::new(Expression::Comparison(ComparisonExpr {
+                        left: Box::new(Expression::Column(ColumnRef {
+                            name: column.clone(),
+                            index: column_index,
+                            data_type: data_type.clone(),
+                        })),
+                        op: ComparisonOp::GreaterThanOrEqual,
+                        right: Box::new(Expression::Literal(Literal {
+                            value: min.clone(),
+                        })),
+                    })),
+                    op: LogicalOp::And,
+                    right: Box::new(Expression::Comparison(ComparisonExpr {
+                        left: Box::new(Expression::Column(ColumnRef {
+                            name: column.clone(),
+                            index: column_index,
+                            data_type: data_type.clone(),
+                        })),
+                        op: ComparisonOp::LessThanOrEqual,
+                        right: Box::new(Expression::Literal(Literal {
+                            value: max.clone(),
+                        })),
+                    })),
+                }))
+            }
+            FilterPredicate::In { column, values } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                // IN (v1, v2, ...) 等价于 A = v1 OR A = v2 OR ...
+                let mut or_conditions = Vec::new();
+                for value in values {
+                    or_conditions.push(Expression::Comparison(ComparisonExpr {
+                        left: Box::new(Expression::Column(ColumnRef {
+                            name: column.clone(),
+                            index: column_index,
+                            data_type: data_type.clone(),
+                        })),
+                        op: ComparisonOp::Equal,
+                        right: Box::new(Expression::Literal(Literal {
+                            value: value.clone(),
+                        })),
+                    }));
+                }
+                
+                if or_conditions.is_empty() {
+                    return Ok(Expression::Literal(Literal {
+                        value: ScalarValue::Boolean(Some(false)),
+                    }));
+                }
+                
+                let mut result = or_conditions.pop().unwrap();
+                for condition in or_conditions {
+                    result = Expression::Logical(LogicalExpr {
+                        left: Box::new(condition),
+                        op: LogicalOp::Or,
+                        right: Box::new(result),
+                    });
+                }
+                Ok(result)
+            }
+            FilterPredicate::IsNull { column } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::IsNull,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: ScalarValue::Boolean(Some(true)),
+                    })),
+                }))
+            }
+            FilterPredicate::IsNotNull { column } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::IsNotNull,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: ScalarValue::Boolean(Some(true)),
+                    })),
+                }))
+            }
+            FilterPredicate::Like { column, pattern } => {
+                let column_index = schema.fields.iter().position(|f| f.name() == column)
+                    .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
+                let data_type = schema.field(column_index).data_type().clone();
+                
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(Expression::Column(ColumnRef {
+                        name: column.clone(),
+                        index: column_index,
+                        data_type: data_type.clone(),
+                    })),
+                    op: ComparisonOp::Like,
+                    right: Box::new(Expression::Literal(Literal {
+                        value: ScalarValue::Utf8(Some(pattern.clone())),
+                    })),
+                }))
+            }
         }
     }
 
@@ -587,7 +741,7 @@ impl BatchFilterProcessor {
     }
 
     /// 添加过滤器
-    pub fn add_filter(&mut self, predicate: FilterPredicate, column_index: usize) {
+    pub fn add_filter(&mut self, predicate: FilterPredicate, column_index: usize) -> Result<()> {
         let mut filter = VectorizedFilter::new(
             self.config.clone(), 
             predicate,
@@ -598,6 +752,7 @@ impl BatchFilterProcessor {
         );
         filter?.set_column_index(column_index);
         self.filters.push(filter?);
+        Ok(())
     }
 
     /// 批量过滤

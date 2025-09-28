@@ -341,14 +341,14 @@ impl VectorizedAggregator {
     fn convert_aggregation_to_expression(&self, agg_func: &AggregationFunction, input_schema: &Schema) -> Result<Expression> {
         match agg_func {
             AggregationFunction::Sum { column, output_column } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                let column_index = input_schema.fields.iter().position(|f| f.name() == &column.to_string())
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
                     func: self.convert_agg_op_to_func(AggregateOp::Sum),
                     expr: Box::new(Expression::Column(ColumnRef {
-                        name: column.clone(),
+                        name: column.to_string(),
                         index: column_index,
                         data_type: data_type,
                     })),
@@ -370,14 +370,14 @@ impl VectorizedAggregator {
                 }))
             }
             AggregationFunction::Avg { column, output_column } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                let column_index = input_schema.fields.iter().position(|f| f.name() == &column.to_string())
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
                     func: self.convert_agg_op_to_func(AggregateOp::Avg),
                     expr: Box::new(Expression::Column(ColumnRef {
-                        name: column.clone(),
+                        name: column.to_string(),
                         index: column_index,
                         data_type: data_type,
                     })),
@@ -386,14 +386,14 @@ impl VectorizedAggregator {
                 }))
             }
             AggregationFunction::Min { column, output_column } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                let column_index = input_schema.fields.iter().position(|f| f.name() == &column.to_string())
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
                     func: self.convert_agg_op_to_func(AggregateOp::Min),
                     expr: Box::new(Expression::Column(ColumnRef {
-                        name: column.clone(),
+                        name: column.to_string(),
                         index: column_index,
                         data_type: data_type,
                     })),
@@ -402,14 +402,14 @@ impl VectorizedAggregator {
                 }))
             }
             AggregationFunction::Max { column, output_column } => {
-                let column_index = input_schema.fields.iter().position(|f| f.name() == column)
+                let column_index = input_schema.fields.iter().position(|f| f.name() == &column.to_string())
                     .ok_or_else(|| anyhow::anyhow!("Column {} not found in schema", column))?;
                 let data_type = input_schema.field(column_index).data_type().clone();
                 
                 Ok(Expression::Aggregate(AggregateExpr {
                     func: self.convert_agg_op_to_func(AggregateOp::Max),
                     expr: Box::new(Expression::Column(ColumnRef {
-                        name: column.clone(),
+                        name: column.to_string(),
                         index: column_index,
                         data_type: data_type,
                     })),
@@ -523,12 +523,12 @@ impl VectorizedAggregator {
                 *count += 1;
             }
             AggregationState::Min { min } => {
-                if min.is_none() || Self::compare_scalar_values_static(&value, min.as_ref().unwrap())? < 0 {
+                if min.is_none() || Self::compare_scalar_values_static(&value, min.as_ref().unwrap())? == std::cmp::Ordering::Less {
                     *min = Some(value);
                 }
             }
             AggregationState::Max { max } => {
-                if max.is_none() || Self::compare_scalar_values_static(&value, max.as_ref().unwrap())? > 0 {
+                if max.is_none() || Self::compare_scalar_values_static(&value, max.as_ref().unwrap())? == std::cmp::Ordering::Greater {
                     *max = Some(value);
                 }
             }

@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig, CompiledExpression};
-use crate::expression::ast::{Expression, ColumnRef, Literal, ArithmeticExpr, ArithmeticOp as ExprArithmeticOp, FunctionCall, CastExpr};
+use crate::expression::ast::{Expression, ColumnRef, Literal, ArithmeticExpr, ArithmeticOp as ExprArithmeticOp, FunctionCall, CastExpr, ComparisonExpr, LogicalExpr, CaseExpr};
 use datafusion_common::ScalarValue;
 use anyhow::Result;
 
@@ -235,6 +235,51 @@ impl VectorizedProjector {
                     target_type: target_type.clone(),
                 }))
             }
+            ProjectionExpression::Comparison { left, op, right } => {
+                Ok(Expression::Comparison(ComparisonExpr {
+                    left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
+                    op: self.convert_comparison_op(op),
+                    right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
+                }))
+            }
+            ProjectionExpression::Logical { left, op, right } => {
+                Ok(Expression::Logical(LogicalExpr {
+                    left: Box::new(self.convert_projection_to_expression(left, input_schema)?),
+                    op: self.convert_logical_op(op),
+                    right: Box::new(self.convert_projection_to_expression(right, input_schema)?),
+                }))
+            }
+            ProjectionExpression::Case { condition, then_expr, else_expr } => {
+                Ok(Expression::Case(CaseExpr {
+                    condition: Box::new(self.convert_projection_to_expression(condition, input_schema)?),
+                    then_expr: Box::new(self.convert_projection_to_expression(then_expr, input_schema)?),
+                    else_expr: Box::new(self.convert_projection_to_expression(else_expr, input_schema)?),
+                }))
+            }
+        }
+    }
+
+    /// 转换比较操作符
+    fn convert_comparison_op(&self, op: &ComparisonOp) -> crate::expression::ast::ComparisonOp {
+        match op {
+            ComparisonOp::Equal => crate::expression::ast::ComparisonOp::Equal,
+            ComparisonOp::NotEqual => crate::expression::ast::ComparisonOp::NotEqual,
+            ComparisonOp::LessThan => crate::expression::ast::ComparisonOp::LessThan,
+            ComparisonOp::LessThanOrEqual => crate::expression::ast::ComparisonOp::LessThanOrEqual,
+            ComparisonOp::GreaterThan => crate::expression::ast::ComparisonOp::GreaterThan,
+            ComparisonOp::GreaterThanOrEqual => crate::expression::ast::ComparisonOp::GreaterThanOrEqual,
+            ComparisonOp::Like => crate::expression::ast::ComparisonOp::Like,
+            ComparisonOp::IsNull => crate::expression::ast::ComparisonOp::IsNull,
+            ComparisonOp::IsNotNull => crate::expression::ast::ComparisonOp::IsNotNull,
+        }
+    }
+
+    /// 转换逻辑操作符
+    fn convert_logical_op(&self, op: &LogicalOp) -> crate::expression::ast::LogicalOp {
+        match op {
+            LogicalOp::And => crate::expression::ast::LogicalOp::And,
+            LogicalOp::Or => crate::expression::ast::LogicalOp::Or,
+            LogicalOp::Not => crate::expression::ast::LogicalOp::Not,
         }
     }
 
