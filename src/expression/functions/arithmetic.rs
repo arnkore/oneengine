@@ -130,6 +130,14 @@ impl FunctionEvaluator for AddFunction {
             stats: FunctionStats::default(),
         })
     }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
+    }
 }
 
 /// 减法函数
@@ -232,6 +240,14 @@ impl FunctionEvaluator for SubtractFunction {
             result,
             stats: FunctionStats::default(),
         })
+    }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
     }
 }
 
@@ -336,6 +352,14 @@ impl FunctionEvaluator for MultiplyFunction {
             stats: FunctionStats::default(),
         })
     }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
+    }
 }
 
 /// 除法函数
@@ -439,6 +463,14 @@ impl FunctionEvaluator for DivideFunction {
             stats: FunctionStats::default(),
         })
     }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
+    }
 }
 
 /// 取模函数
@@ -516,6 +548,14 @@ impl FunctionEvaluator for ModuloFunction {
             stats: FunctionStats::default(),
         })
     }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
+    }
 }
 
 /// 幂运算函数
@@ -592,5 +632,13 @@ impl FunctionEvaluator for PowerFunction {
             result,
             stats: FunctionStats::default(),
         })
+    }
+    
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    
+    fn supports_simd(&self) -> bool {
+        true
     }
 }

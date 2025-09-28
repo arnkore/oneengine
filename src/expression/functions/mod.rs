@@ -85,10 +85,14 @@ pub trait FunctionEvaluator: Send + Sync {
     fn return_type(&self, arg_types: &[arrow::datatypes::DataType]) -> Result<arrow::datatypes::DataType>;
     /// Evaluate function
     fn evaluate(&self, context: &FunctionContext) -> Result<FunctionResult>;
-    /// Whether supports vectorization
-    fn supports_vectorization(&self) -> bool;
-    /// Whether supports SIMD
-    fn supports_simd(&self) -> bool;
+    /// Whether supports vectorization (default: true)
+    fn supports_vectorization(&self) -> bool {
+        true
+    }
+    /// Whether supports SIMD (default: true)
+    fn supports_simd(&self) -> bool {
+        true
+    }
 }
 
 /// Function registry

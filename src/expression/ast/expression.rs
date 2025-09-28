@@ -216,6 +216,7 @@ impl Literal {
             arrow::datatypes::DataType::FixedSizeBinary(size) => ArrowDataType::FixedSizeBinary(size),
             arrow::datatypes::DataType::FixedSizeList(field, size) => ArrowDataType::FixedSizeList(field, size),
             arrow::datatypes::DataType::RunEndEncoded(run_ends_type, values_type) => ArrowDataType::RunEndEncoded(run_ends_type, values_type),
+            _ => todo!(), // Handle new Arrow data types
         }
     }
 }

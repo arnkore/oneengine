@@ -62,8 +62,8 @@ impl ExpressionExecutorImpl {
                     DataType::UInt64 => Arc::new(UInt64Array::from(vec![None; len])) as ArrayRef,
                     DataType::Float32 => Arc::new(Float32Array::from(vec![None; len])) as ArrayRef,
                     DataType::Float64 => Arc::new(Float64Array::from(vec![None; len])) as ArrayRef,
-                    DataType::Utf8 => Arc::new(StringArray::from(vec![None; len])) as ArrayRef,
-                    DataType::LargeUtf8 => Arc::new(LargeStringArray::from(vec![None; len])) as ArrayRef,
+                    DataType::Utf8 => Arc::new(StringArray::from(vec![None::<String>; len])) as ArrayRef,
+                    DataType::LargeUtf8 => Arc::new(LargeStringArray::from(vec![None::<String>; len])) as ArrayRef,
                     DataType::Boolean => Arc::new(BooleanArray::from(vec![None; len])) as ArrayRef,
                     _ => return Err(anyhow::anyhow!("Unsupported literal type: {:?}", literal.value.data_type())),
                 };

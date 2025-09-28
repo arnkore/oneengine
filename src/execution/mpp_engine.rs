@@ -31,6 +31,8 @@ use std::time::Instant;
 use tokio::sync::{RwLock, mpsc};
 
 use super::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
+use super::operators::mpp_exchange::ExchangeConfig;
+use super::operators::mpp_sort::SortColumn;
 use super::operators::mpp_scan::{MppScanOperator, MppScanConfig, MppScanOperatorFactory};
 use super::operators::mpp_exchange::{DataExchangeOperator, ExchangeStrategy};
 use super::operators::mpp_aggregator::{MppAggregationOperator, MppAggregationConfig, MppAggregationOperatorFactory};
@@ -296,8 +298,7 @@ impl MppExecutionEngine {
             config: super::operators::mpp_operator::MppConfig {
                 batch_size: 8192,
                 memory_limit: config.memory_config.operator_memory_limit,
-                enable_vectorization: true,
-                enable_simd: true,
+                // enable_vectorization and enable_simd are not part of MppConfig
             },
         };
 
@@ -366,7 +367,12 @@ impl MppExecutionEngine {
                 Ok(Box::new(operator))
             }
             OperatorType::Exchange { strategy, target_workers } => {
-                let operator = DataExchangeOperator::new(target_workers.clone());
+                let operator = DataExchangeOperator::new(
+                    Uuid::new_v4(),
+                    ExchangeConfig::default(),
+                    target_workers.clone(),
+                    HashMap::new(), // TODO: Add proper exchange channels
+                );
                 Ok(Box::new(operator))
             }
             OperatorType::Aggregation { group_columns, agg_functions } => {
@@ -389,9 +395,18 @@ impl MppExecutionEngine {
             }
             OperatorType::Sort { sort_columns } => {
                 let config = MppSortConfig::default();
+                // Convert Vec<String> to Vec<SortColumn>
+                let sort_cols: Vec<SortColumn> = sort_columns.iter()
+                    .map(|col| SortColumn {
+                        column_name: col.clone(),
+                        ascending: true,
+                        nulls_first: true,
+                    })
+                    .collect();
+                
                 let operator = MppSortOperatorFactory::create_sort(
                     node.operator_id,
-                    sort_columns.clone(),
+                    sort_cols,
                     Arc::new(arrow::datatypes::Schema::empty()),
                     config.memory_limit,
                 )?;

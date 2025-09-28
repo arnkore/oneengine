@@ -46,7 +46,10 @@ impl FunctionEvaluator for CurrentDateFunction {
         let now = Utc::now().date_naive();
         let days_since_epoch = now.signed_duration_since(NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
         let array = Date32Array::from(vec![days_since_epoch; context.batch.num_rows()]);
-        Ok(FunctionResult { result: Arc::new(array) })
+        Ok(FunctionResult { 
+            result: Arc::new(array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -70,7 +73,10 @@ impl FunctionEvaluator for CurrentTimeFunction {
         let now = Utc::now().time();
         let microseconds = now.num_seconds_from_midnight() as i64 * 1_000_000 + now.nanosecond() as i64 / 1000;
         let array = Time64MicrosecondArray::from(vec![microseconds; context.batch.num_rows()]);
-        Ok(FunctionResult { result: Arc::new(array) })
+        Ok(FunctionResult { 
+            result: Arc::new(array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -94,7 +100,10 @@ impl FunctionEvaluator for CurrentTimestampFunction {
         let now = Utc::now();
         let microseconds = now.timestamp_micros();
         let array = TimestampMicrosecondArray::from(vec![microseconds; context.batch.num_rows()]);
-        Ok(FunctionResult { result: Arc::new(array) })
+        Ok(FunctionResult { 
+            result: Arc::new(array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -136,7 +145,10 @@ impl FunctionEvaluator for DateAddFunction {
         }
         
         let result_array = Date32Array::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -178,7 +190,10 @@ impl FunctionEvaluator for DateSubFunction {
         }
         
         let result_array = Date32Array::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -220,7 +235,10 @@ impl FunctionEvaluator for DateDiffFunction {
         }
         
         let result_array = Int32Array::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -278,7 +296,10 @@ impl FunctionEvaluator for ExtractFunction {
         }
         
         let result_array = Int32Array::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -329,7 +350,10 @@ impl FunctionEvaluator for FormatDateFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }

@@ -27,9 +27,7 @@ use arrow::datatypes::SchemaRef;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
-
-/// Worker node identifier
-pub type WorkerId = String;
+use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
 
 /// Join type
 #[derive(Debug, Clone, PartialEq)]
@@ -369,5 +367,37 @@ impl MppJoinOperatorFactory {
         join_condition: JoinCondition,
     ) -> MppNestedLoopJoinOperator {
         MppNestedLoopJoinOperator::new(operator_id, join_condition)
+    }
+}
+
+impl MppOperator for MppHashJoinOperator {
+    fn initialize(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
+    }
+
+    fn process_batch(&mut self, batch: RecordBatch, _context: &MppContext) -> Result<Vec<RecordBatch>> {
+        // Simple pass-through for now
+        Ok(vec![batch])
+    }
+
+    fn exchange_data(&mut self, _data: Vec<RecordBatch>, _target_workers: Vec<WorkerId>) -> Result<()> {
+        Ok(())
+    }
+
+    fn process_partition(&mut self, _partition_id: PartitionId, data: RecordBatch) -> Result<RecordBatch> {
+        // Simple pass-through for now
+        Ok(data)
+    }
+
+    fn finish(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
+    }
+
+    fn get_stats(&self) -> MppOperatorStats {
+        self.stats.clone()
+    }
+
+    fn recover(&mut self, _context: &MppContext) -> Result<()> {
+        Ok(())
     }
 }

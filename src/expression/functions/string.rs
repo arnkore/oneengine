@@ -74,7 +74,10 @@ impl FunctionEvaluator for ConcatFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -129,7 +132,10 @@ impl FunctionEvaluator for SubstringFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -168,7 +174,10 @@ impl FunctionEvaluator for LengthFunction {
         }
         
         let result_array = Int32Array::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { true }
@@ -207,7 +216,10 @@ impl FunctionEvaluator for UpperFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -246,7 +258,10 @@ impl FunctionEvaluator for LowerFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -285,7 +300,10 @@ impl FunctionEvaluator for TrimFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -332,7 +350,10 @@ impl FunctionEvaluator for ReplaceFunction {
         }
         
         let result_array = StringArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }
@@ -384,7 +405,10 @@ impl FunctionEvaluator for RegexMatchFunction {
         }
         
         let result_array = BooleanArray::from(result_values);
-        Ok(FunctionResult { result: Arc::new(result_array) })
+        Ok(FunctionResult { 
+            result: Arc::new(result_array),
+            stats: FunctionStats::default(),
+        })
     }
     fn supports_vectorization(&self) -> bool { true }
     fn supports_simd(&self) -> bool { false }

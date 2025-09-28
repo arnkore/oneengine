@@ -28,9 +28,7 @@ use arrow::array::*;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
-
-/// Worker node identifier
-pub type WorkerId = String;
+use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
 
 /// Aggregation function type
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +92,7 @@ pub struct GroupByColumn {
 }
 
 /// MPP aggregation configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MppAggregationConfig {
     /// Group by columns
     pub group_by_columns: Vec<GroupByColumn>,
@@ -452,6 +450,26 @@ impl MppAggregationOperator {
 pub struct MppAggregationOperatorFactory;
 
 impl MppAggregationOperatorFactory {
+    /// Create an aggregation operator
+    pub fn create_aggregation(
+        operator_id: Uuid,
+        config: MppAggregationConfig,
+        output_schema: SchemaRef,
+        memory_limit: usize,
+    ) -> Result<MppAggregationOperator> {
+        Ok(MppAggregationOperator {
+            operator_id,
+            partition_id: Uuid::new_v4(),
+            config,
+            output_schema,
+            memory_limit,
+            group_by_columns: Vec::new(),
+            aggregation_columns: Vec::new(),
+            buffered_data: Vec::new(),
+            stats: MppOperatorStats::default(),
+        })
+    }
+
     /// Create local aggregation operator
     pub fn create_local_aggregation(
         operator_id: Uuid,

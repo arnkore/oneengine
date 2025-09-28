@@ -381,7 +381,7 @@ impl MppSortOperatorFactory {
         sort_columns: Vec<SortColumn>,
         output_schema: SchemaRef,
         memory_limit: usize,
-    ) -> MppSortOperator {
+    ) -> Result<MppSortOperator> {
         let config = MppSortConfig {
             sort_columns,
             output_schema,
@@ -390,7 +390,7 @@ impl MppSortOperatorFactory {
             external_sort_dir: Some("/tmp/sort".to_string()),
         };
         
-        MppSortOperator::new(operator_id, config)
+        Ok(MppSortOperator::new(operator_id, config))
     }
     
     /// Create top-N operator
