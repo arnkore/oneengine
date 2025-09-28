@@ -23,9 +23,9 @@ use crate::execution::scheduler::pipeline_manager::PipelineManager;
 use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
 use crate::execution::vectorized_driver::VectorizedDriver;
 use crate::execution::operators::scan_operator::VectorizedScanConfig;
-use crate::execution::operators::filter::{FilterPredicate, VectorizedFilterConfig};
+use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
-use crate::expression::ast::{Expression, ColumnRef};
+use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
 use crate::execution::operators::aggregator::{AggregationFunction, VectorizedAggregatorConfig};
 use crate::utils::config::SchedulerConfig;
 use anyhow::Result;
@@ -278,10 +278,17 @@ impl PushScheduler {
                             OperatorNode {
                                 operator_id,
                                 operator_type: OperatorType::Filter { 
-                                    predicate: FilterPredicate::GreaterThan {
-                                        column: "value".to_string(),
-                                        value: ScalarValue::Int32(Some(0)),
-                                    },
+                                    predicate: Expression::Comparison(ComparisonExpr {
+                                        left: Box::new(Expression::Column(ColumnRef {
+                                            name: "value".to_string(),
+                                            index: 0,
+                                            data_type: DataType::Int32,
+                                        })),
+                                        op: ComparisonOp::GreaterThan,
+                                        right: Box::new(Expression::Literal(Literal {
+                                            value: ScalarValue::Int32(Some(0)),
+                                        })),
+                                    }),
                                     column_index: 0,
                                 },
                                 input_ports,

@@ -71,10 +71,6 @@ impl Default for VectorizedProjectorConfig {
     }
 }
 
-// 删除ProjectionExpression，直接使用统一的Expression AST
-
-// 删除ProjectionExpression和相关的操作符定义，直接使用统一的Expression AST
-
 /// 列式向量化投影器
 pub struct VectorizedProjector {
     config: VectorizedProjectorConfig,
@@ -194,8 +190,6 @@ impl VectorizedProjector {
         }
     }
 
-
-
     /// 创建字面量数组
     fn create_literal_array_static(value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
         match value {
@@ -227,8 +221,6 @@ impl VectorizedProjector {
         }
     }
 
-
-
     /// 向量化投影
     pub fn project(&mut self, batch: &RecordBatch) -> Result<RecordBatch, String> {
         let start = Instant::now();
@@ -256,8 +248,6 @@ impl VectorizedProjector {
         Ok(result)
     }
 
-    
-
     /// 创建常量数组
     fn create_literal_array(&self, value: &ScalarValue, len: usize) -> Result<ArrayRef, String> {
         match value {
@@ -282,7 +272,6 @@ impl VectorizedProjector {
             _ => Err(format!("Unsupported literal type: {:?}", value))
         }
     }
-
 
     /// 更新统计信息
     fn update_stats(&mut self, rows: usize, duration: std::time::Duration) {

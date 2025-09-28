@@ -107,7 +107,7 @@ pub struct OperatorNode {
 #[derive(Debug, Clone)]
 pub enum OperatorType {
     Scan { file_path: String },
-    Filter { predicate: FilterPredicate, column_index: usize },
+    Filter { predicate: Expression, column_index: usize },
     Project { expressions: Vec<Expression>, output_schema: SchemaRef },
     Aggregate { group_columns: Vec<usize>, agg_functions: Vec<AggregationFunction> },
     Sort { sort_columns: Vec<SortColumn> },
@@ -394,7 +394,7 @@ impl VectorizedDriver {
     pub fn create_simple_query_plan(
         &self,
         file_path: String,
-        filter_predicate: Option<FilterPredicate>,
+        filter_predicate: Option<Expression>,
         projection_expressions: Option<Vec<Expression>>,
         aggregation: Option<(Vec<usize>, Vec<AggregationFunction>)>,
     ) -> QueryPlan {
