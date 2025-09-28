@@ -19,7 +19,6 @@
 //! 
 //! 提供表达式结果缓存功能，避免重复计算
 
-pub mod expression_cache;
 pub mod result_cache;
 
 use crate::expression::ast::Expression;
