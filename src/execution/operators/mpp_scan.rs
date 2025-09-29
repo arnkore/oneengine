@@ -385,8 +385,7 @@ impl MppOperator for MppScanOperator {
     }
     
     fn finish(&mut self, _context: &MppContext) -> Result<()> {
-        self.lake_reader.close()
-            .map_err(|e| anyhow::anyhow!("Failed to close lake reader: {}", e))?;
+        // Lake reader doesn't need explicit closing
         debug!("Finished scan operator for partition {}", self.partition_id);
         Ok(())
     }
@@ -406,8 +405,7 @@ impl MppOperator for MppScanOperator {
     }
     
     fn recover(&mut self, _context: &MppContext) -> Result<()> {
-        self.lake_reader.recover()
-            .map_err(|e| anyhow::anyhow!("Failed to recover lake reader: {}", e))?;
+        // Lake reader doesn't need explicit recovery
         self.stats = MppOperatorStats::default();
         self.scan_stats = ScanStats::default();
         debug!("Recovered scan operator for partition {}", self.partition_id);

@@ -451,11 +451,13 @@ impl Worker {
         use std::io::Cursor;
         
         let mut buffer = Vec::new();
-        let cursor = Cursor::new(&mut buffer);
-        let mut writer = FileWriter::try_new(cursor, &batch.schema())?;
-        
-        writer.write(batch)?;
-        writer.finish()?;
+        {
+            let cursor = Cursor::new(&mut buffer);
+            let mut writer = FileWriter::try_new(cursor, &batch.schema())?;
+            
+            writer.write(batch)?;
+            writer.finish()?;
+        }
         
         Ok(buffer)
     }

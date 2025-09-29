@@ -215,7 +215,8 @@ impl MppSortOperator {
         }
         
         // Perform sort
-        let sorted_indices = compute::sort_to_indices(&sort_columns, Some(sort_options), None)?;
+        let sort_columns_refs: Vec<&dyn arrow::array::Array> = sort_columns.iter().map(|col| col.as_ref()).collect();
+        let sorted_indices = compute::sort_to_indices(&sort_columns_refs[..], Some(sort_options), None)?;
         
         // Apply sort to all columns
         let sorted_columns: Result<Vec<Arc<dyn arrow::array::Array>>, arrow::error::ArrowError> = batch
