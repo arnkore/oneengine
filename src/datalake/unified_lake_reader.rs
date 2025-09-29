@@ -348,9 +348,8 @@ impl UnifiedLakeReader {
                 Box::new(HudiAdapter::new())
             },
             LakeFormat::Parquet => {
-                // 对于原生Parquet文件，我们使用现有的ParquetReader
-                // 这里可以返回一个包装器或者直接使用ParquetReader
-                todo!("Parquet format should use existing ParquetReader directly")
+                // 使用Parquet适配器
+                Box::new(ParquetAdapter::new())
             },
             LakeFormat::Orc => {
                 // 对于原生ORC文件，我们使用现有的OrcDataLakeReader

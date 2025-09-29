@@ -309,6 +309,21 @@ impl PushScheduler {
                                 config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
                             }
                         },
+                        "sort" => {
+                            OperatorNode {
+                                operator_id,
+                                operator_type: OperatorType::Sort { 
+                                    sort_columns: vec![SortColumn {
+                                        column_index: 0,
+                                        ascending: true,
+                                        nulls_first: true,
+                                    }],
+                                },
+                                input_ports,
+                                output_ports,
+                                config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
+                            }
+                        },
                         "aggregate" => {
                             // TODO: Implement MPP aggregation operator
                             OperatorNode {

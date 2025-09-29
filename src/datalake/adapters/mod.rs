@@ -22,8 +22,10 @@
 pub mod iceberg_adapter;
 pub mod paimon_adapter;
 pub mod hudi_adapter;
+pub mod parquet_adapter;
 
 // 重新导出适配器
 pub use iceberg_adapter::IcebergAdapter;
 pub use paimon_adapter::PaimonAdapter;
 pub use hudi_adapter::HudiAdapter;
+pub use parquet_adapter::ParquetAdapter;

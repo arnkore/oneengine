@@ -123,9 +123,9 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
         // Scan operator
         OperatorNode {
             operator_id: "scan_1".to_string(),
-            operator_type: OperatorType::MppScan {
-                table_path: "/data/employees.parquet".to_string(),
-                predicate: Some(predicate.clone()),
+            operator_type: OperatorType::MppScan { 
+                table_path: "/data/employees.parquet".to_string(), 
+                predicate: Some(predicate.clone())
             },
             dependencies: vec![],
             config: OperatorConfig::default(),
@@ -136,8 +136,8 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
         // Filter operator
         OperatorNode {
             operator_id: "filter_1".to_string(),
-            operator_type: OperatorType::MppFilter {
-                predicate: predicate.clone(),
+            operator_type: OperatorType::MppFilter { 
+                predicate: predicate.clone()
             },
             dependencies: vec![0], // Depends on scan_1
             config: OperatorConfig::default(),
@@ -148,8 +148,8 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
         // Project operator
         OperatorNode {
             operator_id: "project_1".to_string(),
-            operator_type: OperatorType::MppProject {
-                expressions: projection_expressions,
+            operator_type: OperatorType::MppProject { 
+                expressions: projection_expressions.clone()
             },
             dependencies: vec![1], // Depends on filter_1
             config: OperatorConfig::default(),
@@ -164,8 +164,8 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
         // Sort operator
         OperatorNode {
             operator_id: "sort_1".to_string(),
-            operator_type: OperatorType::MppSort {
-                sort_columns: vec!["salary".to_string()],
+            operator_type: OperatorType::MppSort { 
+                sort_columns: vec!["salary".to_string()] 
             },
             dependencies: vec![2], // Depends on project_1
             config: OperatorConfig::default(),

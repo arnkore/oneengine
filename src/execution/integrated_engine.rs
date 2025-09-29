@@ -290,6 +290,63 @@ impl IntegratedEngine {
                     },
                 )
             }
+            OperatorType::MppFilter { .. } => {
+                Task::new(
+                    format!("Filter-{}", index),
+                    crate::execution::task::TaskType::DataProcessing {
+                        operator: "filter".to_string(),
+                        input_schema: None,
+                        output_schema: None,
+                    },
+                    crate::execution::task::Priority::Normal,
+                    crate::execution::task::ResourceRequirements {
+                        cpu_cores: 1,
+                        memory_mb: 256,
+                        disk_mb: 0,
+                        network_bandwidth_mbps: None,
+                        gpu_cores: None,
+                        custom_resources: HashMap::new(),
+                    },
+                )
+            }
+            OperatorType::MppProject { .. } => {
+                Task::new(
+                    format!("Project-{}", index),
+                    crate::execution::task::TaskType::DataProcessing {
+                        operator: "project".to_string(),
+                        input_schema: None,
+                        output_schema: None,
+                    },
+                    crate::execution::task::Priority::Normal,
+                    crate::execution::task::ResourceRequirements {
+                        cpu_cores: 1,
+                        memory_mb: 256,
+                        disk_mb: 0,
+                        network_bandwidth_mbps: None,
+                        gpu_cores: None,
+                        custom_resources: HashMap::new(),
+                    },
+                )
+            }
+            OperatorType::MppSort { .. } => {
+                Task::new(
+                    format!("Sort-{}", index),
+                    crate::execution::task::TaskType::DataProcessing {
+                        operator: "sort".to_string(),
+                        input_schema: None,
+                        output_schema: None,
+                    },
+                    crate::execution::task::Priority::Normal,
+                    crate::execution::task::ResourceRequirements {
+                        cpu_cores: 1,
+                        memory_mb: 512,
+                        disk_mb: 0,
+                        network_bandwidth_mbps: None,
+                        gpu_cores: None,
+                        custom_resources: HashMap::new(),
+                    },
+                )
+            }
             OperatorType::MppJoin { join_type, .. } => {
                 Task::new(
                     format!("Join-{}", index),
@@ -309,18 +366,56 @@ impl IntegratedEngine {
                     },
                 )
             }
-            _ => {
+            OperatorType::MppAggregate { .. } => {
                 Task::new(
-                    format!("Operator-{}", index),
+                    format!("Aggregate-{}", index),
                     crate::execution::task::TaskType::DataProcessing {
-                        operator: "generic".to_string(),
+                        operator: "aggregate".to_string(),
                         input_schema: None,
                         output_schema: None,
                     },
-                    crate::execution::task::Priority::Normal,
+                    crate::execution::task::Priority::High,
+                    crate::execution::task::ResourceRequirements {
+                        cpu_cores: 2,
+                        memory_mb: 1024,
+                        disk_mb: 0,
+                        network_bandwidth_mbps: None,
+                        gpu_cores: None,
+                        custom_resources: HashMap::new(),
+                    },
+                )
+            }
+            OperatorType::MppExchange { .. } => {
+                Task::new(
+                    format!("Exchange-{}", index),
+                    crate::execution::task::TaskType::DataProcessing {
+                        operator: "exchange".to_string(),
+                        input_schema: None,
+                        output_schema: None,
+                    },
+                    crate::execution::task::Priority::High,
                     crate::execution::task::ResourceRequirements {
                         cpu_cores: 1,
-                        memory_mb: 256,
+                        memory_mb: 512,
+                        disk_mb: 0,
+                        network_bandwidth_mbps: Some(1000),
+                        gpu_cores: None,
+                        custom_resources: HashMap::new(),
+                    },
+                )
+            }
+            OperatorType::MppWindow { .. } => {
+                Task::new(
+                    format!("Window-{}", index),
+                    crate::execution::task::TaskType::DataProcessing {
+                        operator: "window".to_string(),
+                        input_schema: None,
+                        output_schema: None,
+                    },
+                    crate::execution::task::Priority::High,
+                    crate::execution::task::ResourceRequirements {
+                        cpu_cores: 2,
+                        memory_mb: 1024,
                         disk_mb: 0,
                         network_bandwidth_mbps: None,
                         gpu_cores: None,
