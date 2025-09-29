@@ -138,14 +138,14 @@ impl IntegratedEngine {
         let mpp_engine = MppExecutionEngineFactory::create_engine(config.mpp_config.clone());
 
         // Create vectorized driver
-        let vectorized_driver = VectorizedDriver::new(config.vectorized_config.clone())?;
+        let vectorized_driver = VectorizedDriver::new(config.vectorized_config.clone());
 
         // Create scheduler
         let scheduler_config = crate::utils::config::SchedulerConfig::default();
         let scheduler = Arc::new(PushScheduler::new(scheduler_config).await?);
 
         // Create lake house reader
-        let lake_reader = UnifiedLakeReader::new(config.lake_config.clone())?;
+        let lake_reader = UnifiedLakeReader::new(config.lake_config.clone());
 
         // Set vectorized driver in scheduler
         scheduler.set_vectorized_driver(vectorized_driver.clone()).await?;
@@ -347,7 +347,8 @@ impl IntegratedEngine {
 
     /// Get execution statistics
     pub async fn get_execution_stats(&self) -> ExecutionStats {
-        self.execution_stats.read().await.clone()
+        let stats = self.execution_stats.read().await;
+        stats.clone()
     }
 
     /// Get active pipelines

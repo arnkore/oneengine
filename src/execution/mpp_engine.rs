@@ -461,8 +461,13 @@ impl MppExecutionEngine {
 
         // Execute operators in parallel
         let mut tasks = Vec::new();
-        for operator_node in &stage.operators {
-            if let Some(operator) = self.operators.get_mut(&operator_node.operator_id) {
+        let operator_ids: Vec<Uuid> = stage.operators.iter().map(|op| op.operator_id).collect();
+        
+        for operator_id in operator_ids {
+            if let Some(operator) = self.operators.get_mut(&operator_id) {
+                let operator_node = stage.operators.iter()
+                    .find(|op| op.operator_id == operator_id)
+                    .unwrap();
                 let task = self.execute_operator(operator, operator_node);
                 tasks.push(task);
             }

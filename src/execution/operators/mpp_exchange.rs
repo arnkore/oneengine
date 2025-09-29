@@ -257,15 +257,17 @@ impl DataExchangeOperator {
         if let Some(partitioner) = &self.hash_partitioner {
             // Group rows by partition
             let mut partition_batches: HashMap<usize, Vec<RecordBatch>> = HashMap::new();
+            let target_workers = self.target_workers.clone();
+            let exchange_channels = self.exchange_channels.clone();
             
             for row_idx in 0..batch.num_rows() {
                 let partition = partitioner.get_partition(&batch, row_idx)?;
-                let worker_idx = partition % self.target_workers.len();
+                let worker_idx = partition % target_workers.len();
                 
                 // For simplicity, we'll send the entire batch to the determined worker
                 // In a real implementation, you'd slice the batch by rows
-                if let Some(worker_id) = self.target_workers.get(worker_idx) {
-                    if let Some(channel) = self.exchange_channels.get(worker_id) {
+                if let Some(worker_id) = target_workers.get(worker_idx) {
+                    if let Some(channel) = exchange_channels.get(worker_id) {
                         self.send_batch_with_retry(channel, batch.clone(), worker_id).await?;
                     }
                 }

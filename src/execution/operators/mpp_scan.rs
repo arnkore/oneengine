@@ -353,9 +353,9 @@ impl MppOperator for MppScanOperator {
         if let Some(ref table_path) = self.current_table_path {
             self.lake_reader.open()
                 .map_err(|e| anyhow::anyhow!("Failed to open table: {}", e))?;
-            self.table_metadata = Some(self.lake_reader.get_metadata()
-                .map_err(|e| anyhow::anyhow!("Failed to get metadata: {}", e))?
-                .clone());
+            let metadata = self.lake_reader.get_metadata()
+                .map_err(|e| anyhow::anyhow!("Failed to get metadata: {}", e))?;
+            self.table_metadata = Some(metadata.clone());
         }
         debug!("Initialized scan operator for partition {}", self.partition_id);
         Ok(())
