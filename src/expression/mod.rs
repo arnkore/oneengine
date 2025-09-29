@@ -43,6 +43,12 @@ pub struct ExpressionEngineConfig {
     pub cache_max_entries: usize,
     /// 缓存最大内存使用量（字节）
     pub cache_max_memory: usize,
+    /// 是否启用JIT编译
+    pub enable_jit: bool,
+    /// 是否启用SIMD优化
+    pub enable_simd: bool,
+    /// 是否启用表达式融合
+    pub enable_fusion: bool,
 }
 
 impl Default for ExpressionEngineConfig {
@@ -52,6 +58,9 @@ impl Default for ExpressionEngineConfig {
             enable_cache: true,
             cache_max_entries: 1000,
             cache_max_memory: 1024 * 1024 * 1024, // 1GB
+            enable_jit: false,
+            enable_simd: true,
+            enable_fusion: true,
         }
     }
 }

@@ -48,7 +48,7 @@ pub struct IntegratedEngineConfig {
     /// Pipeline execution configuration
     pub pipeline_config: PipelineConfig,
     /// Lake house reader configuration
-    pub lake_config: LakeReaderConfig,
+    pub lake_config: UnifiedLakeReaderConfig,
 }
 
 /// Pipeline execution configuration
@@ -138,7 +138,7 @@ impl IntegratedEngine {
         let mpp_engine = MppExecutionEngineFactory::create_engine(config.mpp_config.clone());
 
         // Create vectorized driver
-        let vectorized_driver = VectorizedDriver::new(config.vectorized_config.clone());
+        let vectorized_driver = Arc::new(VectorizedDriver::new(config.vectorized_config.clone()));
 
         // Create scheduler
         let scheduler_config = crate::utils::config::SchedulerConfig::default();
