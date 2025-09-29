@@ -332,14 +332,15 @@ impl VectorizedDriver {
                         _ => return Err("Invalid config for aggregator operator".to_string()),
                     };
                     
-                    let aggregator_operator = VectorizedAggregator::new(aggregator_config);
+                    let _aggregator_operator = VectorizedAggregator::new(aggregator_config);
                     
-                    self.event_loop.register_operator(
-                        node.operator_id, 
-                        Box::new(aggregator_operator),
-                        vec![2], // input ports
-                        vec![3] // output ports
-                    ).map_err(|e| e.to_string())?;
+                    // TODO: Implement Operator trait for VectorizedAggregator
+                    // self.event_loop.register_operator(
+                    //     node.operator_id, 
+                    //     Box::new(aggregator_operator),
+                    //     vec![2], // input ports
+                    //     vec![3] // output ports
+                    // ).map_err(|e| e.to_string())?;
                 },
                 _ => {
                     return Err(format!("Unsupported operator type: {:?}", node.operator_type));

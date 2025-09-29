@@ -475,7 +475,8 @@ impl MppUnionOperator {
                 .collect();
             
             // Concatenate arrays
-            let concatenated = arrow::compute::concat(&selected_values)?;
+            let selected_values_refs: Vec<&dyn arrow::array::Array> = selected_values.iter().map(|arr| arr.as_ref()).collect();
+            let concatenated = arrow::compute::concat(&selected_values_refs)?;
             new_columns.push(concatenated);
         }
         
@@ -538,7 +539,7 @@ impl MppOperator for MppUnionOperator {
         let results = self.process_union()?;
         
         if results.is_empty() {
-            let empty_batch = RecordBatch::new_empty(Arc::new(schema));
+            let empty_batch = RecordBatch::new_empty(schema);
             Ok(empty_batch)
         } else {
             Ok(results[0].clone())

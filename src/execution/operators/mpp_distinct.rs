@@ -322,7 +322,8 @@ impl MppDistinctOperator {
                 .collect();
             
             // Concatenate arrays
-            let concatenated = arrow::compute::concat(&distinct_values)?;
+            let distinct_values_refs: Vec<&dyn arrow::array::Array> = distinct_values.iter().map(|arr| arr.as_ref()).collect();
+            let concatenated = arrow::compute::concat(&distinct_values_refs)?;
             distinct_columns.push(concatenated);
         }
         
@@ -389,7 +390,7 @@ impl MppOperator for MppDistinctOperator {
         
         if self.config.use_hash_distinct {
             // Return empty batch for hash-based distinct
-            let empty_batch = RecordBatch::new_empty(Arc::new(schema));
+            let empty_batch = RecordBatch::new_empty(schema);
             Ok(empty_batch)
         } else {
             // Process using sort-based approach
