@@ -22,7 +22,7 @@
 
 use oneengine::execution::integrated_engine::*;
 use oneengine::expression::ast::*;
-use arrow::datatypes::*;
+use arrow::datatypes::{DataType as ArrowDataType, Field, Schema};
 use anyhow::Result;
 use tracing::{info, debug};
 
@@ -79,40 +79,42 @@ async fn main() -> Result<()> {
 fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
     // Define schema
     let schema = Schema::new(vec![
-        Field::new("id", DataType::Int64, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("age", DataType::Int32, false),
-        Field::new("salary", DataType::Float64, false),
-        Field::new("department", DataType::Utf8, false),
+        Field::new("id", ArrowDataType::Int64, false),
+        Field::new("name", ArrowDataType::Utf8, false),
+        Field::new("age", ArrowDataType::Int32, false),
+        Field::new("salary", ArrowDataType::Float64, false),
+        Field::new("department", ArrowDataType::Utf8, false),
     ]);
     
     // Create predicate expression: age > 25
     let predicate = Expression::Comparison(ComparisonExpr {
-        left: Box::new(Expression::ColumnRef(ColumnRef {
+        left: Box::new(Expression::Column(ColumnRef {
             name: "age".to_string(),
-            data_type: ExprDataType::Int32,
+            index: 0,
+            data_type: ArrowDataType::Int32,
         })),
-        op: ComparisonOp::Gt,
+        op: ComparisonOp::GreaterThan,
         right: Box::new(Expression::Literal(Literal {
             value: datafusion_common::ScalarValue::Int32(Some(25)),
-            data_type: ExprDataType::Int32,
         })),
-        data_type: ExprDataType::Boolean,
     });
     
     // Create projection expressions
     let projection_expressions = vec![
-        Expression::ColumnRef(ColumnRef {
+        Expression::Column(ColumnRef {
             name: "id".to_string(),
-            data_type: ExprDataType::Int64,
+            index: 0,
+            data_type: ArrowDataType::Int64,
         }),
-        Expression::ColumnRef(ColumnRef {
+        Expression::Column(ColumnRef {
             name: "name".to_string(),
-            data_type: ExprDataType::Utf8,
+            index: 1,
+            data_type: ArrowDataType::Utf8,
         }),
-        Expression::ColumnRef(ColumnRef {
+        Expression::Column(ColumnRef {
             name: "salary".to_string(),
-            data_type: ExprDataType::Float64,
+            index: 2,
+            data_type: ArrowDataType::Float64,
         }),
     ];
     
@@ -153,9 +155,9 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
             config: OperatorConfig::default(),
             input_schemas: vec![schema.clone()],
             output_schema: Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("salary", DataType::Float64, false),
+                Field::new("id", ArrowDataType::Int64, false),
+                Field::new("name", ArrowDataType::Utf8, false),
+                Field::new("salary", ArrowDataType::Float64, false),
             ]),
         },
         
@@ -168,14 +170,14 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
             dependencies: vec![2], // Depends on project_1
             config: OperatorConfig::default(),
             input_schemas: vec![Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("salary", DataType::Float64, false),
+                Field::new("id", ArrowDataType::Int64, false),
+                Field::new("name", ArrowDataType::Utf8, false),
+                Field::new("salary", ArrowDataType::Float64, false),
             ])],
             output_schema: Schema::new(vec![
-                Field::new("id", DataType::Int64, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("salary", DataType::Float64, false),
+                Field::new("id", ArrowDataType::Int64, false),
+                Field::new("name", ArrowDataType::Utf8, false),
+                Field::new("salary", ArrowDataType::Float64, false),
             ]),
         },
     ];
@@ -186,9 +188,9 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
         operators,
         dependencies: vec![],
         output_schema: Schema::new(vec![
-            Field::new("id", DataType::Int64, false),
-            Field::new("name", DataType::Utf8, false),
-            Field::new("salary", DataType::Float64, false),
+            Field::new("id", ArrowDataType::Int64, false),
+            Field::new("name", ArrowDataType::Utf8, false),
+            Field::new("salary", ArrowDataType::Float64, false),
         ]),
         estimated_rows: Some(10000),
         estimated_memory_mb: Some(100),
@@ -199,16 +201,16 @@ fn create_sample_stage_plan() -> Result<StageExecutionPlan> {
 fn create_complex_stage_plan() -> Result<StageExecutionPlan> {
     // Define schemas
     let employees_schema = Schema::new(vec![
-        Field::new("emp_id", DataType::Int64, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("dept_id", DataType::Int32, false),
-        Field::new("salary", DataType::Float64, false),
+        Field::new("emp_id", ArrowDataType::Int64, false),
+        Field::new("name", ArrowDataType::Utf8, false),
+        Field::new("dept_id", ArrowDataType::Int32, false),
+        Field::new("salary", ArrowDataType::Float64, false),
     ]);
     
     let departments_schema = Schema::new(vec![
-        Field::new("dept_id", DataType::Int32, false),
-        Field::new("dept_name", DataType::Utf8, false),
-        Field::new("budget", DataType::Float64, false),
+        Field::new("dept_id", ArrowDataType::Int32, false),
+        Field::new("dept_name", ArrowDataType::Utf8, false),
+        Field::new("budget", ArrowDataType::Float64, false),
     ]);
     
     // Create operator nodes
@@ -250,11 +252,11 @@ fn create_complex_stage_plan() -> Result<StageExecutionPlan> {
             config: OperatorConfig::default(),
             input_schemas: vec![employees_schema.clone(), departments_schema.clone()],
             output_schema: Schema::new(vec![
-                Field::new("emp_id", DataType::Int64, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("dept_name", DataType::Utf8, false),
-                Field::new("salary", DataType::Float64, false),
-                Field::new("budget", DataType::Float64, false),
+                Field::new("emp_id", ArrowDataType::Int64, false),
+                Field::new("name", ArrowDataType::Utf8, false),
+                Field::new("dept_name", ArrowDataType::Utf8, false),
+                Field::new("salary", ArrowDataType::Float64, false),
+                Field::new("budget", ArrowDataType::Float64, false),
             ]),
         },
         
@@ -268,17 +270,17 @@ fn create_complex_stage_plan() -> Result<StageExecutionPlan> {
             dependencies: vec![2], // Depends on join
             config: OperatorConfig::default(),
             input_schemas: vec![Schema::new(vec![
-                Field::new("emp_id", DataType::Int64, false),
-                Field::new("name", DataType::Utf8, false),
-                Field::new("dept_name", DataType::Utf8, false),
-                Field::new("salary", DataType::Float64, false),
-                Field::new("budget", DataType::Float64, false),
+                Field::new("emp_id", ArrowDataType::Int64, false),
+                Field::new("name", ArrowDataType::Utf8, false),
+                Field::new("dept_name", ArrowDataType::Utf8, false),
+                Field::new("salary", ArrowDataType::Float64, false),
+                Field::new("budget", ArrowDataType::Float64, false),
             ])],
             output_schema: Schema::new(vec![
-                Field::new("dept_name", DataType::Utf8, false),
-                Field::new("emp_count", DataType::Int64, false),
-                Field::new("avg_salary", DataType::Float64, false),
-                Field::new("total_salary", DataType::Float64, false),
+                Field::new("dept_name", ArrowDataType::Utf8, false),
+                Field::new("emp_count", ArrowDataType::Int64, false),
+                Field::new("avg_salary", ArrowDataType::Float64, false),
+                Field::new("total_salary", ArrowDataType::Float64, false),
             ]),
         },
         
@@ -291,16 +293,16 @@ fn create_complex_stage_plan() -> Result<StageExecutionPlan> {
             dependencies: vec![3], // Depends on aggregation
             config: OperatorConfig::default(),
             input_schemas: vec![Schema::new(vec![
-                Field::new("dept_name", DataType::Utf8, false),
-                Field::new("emp_count", DataType::Int64, false),
-                Field::new("avg_salary", DataType::Float64, false),
-                Field::new("total_salary", DataType::Float64, false),
+                Field::new("dept_name", ArrowDataType::Utf8, false),
+                Field::new("emp_count", ArrowDataType::Int64, false),
+                Field::new("avg_salary", ArrowDataType::Float64, false),
+                Field::new("total_salary", ArrowDataType::Float64, false),
             ])],
             output_schema: Schema::new(vec![
-                Field::new("dept_name", DataType::Utf8, false),
-                Field::new("emp_count", DataType::Int64, false),
-                Field::new("avg_salary", DataType::Float64, false),
-                Field::new("total_salary", DataType::Float64, false),
+                Field::new("dept_name", ArrowDataType::Utf8, false),
+                Field::new("emp_count", ArrowDataType::Int64, false),
+                Field::new("avg_salary", ArrowDataType::Float64, false),
+                Field::new("total_salary", ArrowDataType::Float64, false),
             ]),
         },
     ];
@@ -311,10 +313,10 @@ fn create_complex_stage_plan() -> Result<StageExecutionPlan> {
         operators,
         dependencies: vec![],
         output_schema: Schema::new(vec![
-            Field::new("dept_name", DataType::Utf8, false),
-            Field::new("emp_count", DataType::Int64, false),
-            Field::new("avg_salary", DataType::Float64, false),
-            Field::new("total_salary", DataType::Float64, false),
+            Field::new("dept_name", ArrowDataType::Utf8, false),
+            Field::new("emp_count", ArrowDataType::Int64, false),
+            Field::new("avg_salary", ArrowDataType::Float64, false),
+            Field::new("total_salary", ArrowDataType::Float64, false),
         ]),
         estimated_rows: Some(50),
         estimated_memory_mb: Some(200),
