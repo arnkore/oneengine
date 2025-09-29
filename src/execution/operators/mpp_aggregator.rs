@@ -536,9 +536,13 @@ impl MppOperator for MppAggregationOperator {
         MppOperatorStats {
             rows_processed: self.stats.rows_processed,
             batches_processed: 0,
+            data_exchanged: 0,
+            network_operations: 0,
             processing_time: std::time::Duration::from_secs(0),
+            network_time: std::time::Duration::from_secs(0),
+            retry_count: 0,
+            error_count: 0,
             memory_usage: self.memory_usage,
-            errors: 0,
         }
     }
 

@@ -390,7 +390,17 @@ impl MppOperator for MppScanOperator {
     }
     
     fn get_stats(&self) -> MppOperatorStats {
-        self.stats.clone()
+        MppOperatorStats {
+            rows_processed: self.stats.rows_processed,
+            batches_processed: self.stats.batches_processed,
+            data_exchanged: 0,
+            network_operations: 0,
+            processing_time: self.stats.processing_time,
+            network_time: std::time::Duration::from_secs(0),
+            retry_count: 0,
+            error_count: 0,
+            memory_usage: 0,
+        }
     }
     
     fn recover(&mut self, _context: &MppContext) -> Result<()> {

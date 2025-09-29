@@ -141,6 +141,8 @@ pub struct MppOperatorStats {
     pub retry_count: u64,
     /// Error count
     pub error_count: u64,
+    /// Memory usage (bytes)
+    pub memory_usage: usize,
 }
 
 /// MPP operator factory
