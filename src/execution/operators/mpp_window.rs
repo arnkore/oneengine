@@ -363,11 +363,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -387,11 +387,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -411,11 +411,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -435,11 +435,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -459,11 +459,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Float64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -483,11 +483,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -507,11 +507,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;
@@ -531,11 +531,11 @@ impl MppWindowOperator {
         
         // Create new schema
         let mut new_fields = batch.schema().fields().to_vec();
-        new_fields.push(arrow::datatypes::Field::new(
+        new_fields.push(Arc::new(arrow::datatypes::Field::new(
             &window_func.output_column,
             arrow::datatypes::DataType::Int64,
             false,
-        ));
+        )));
         
         let new_schema = Arc::new(arrow::datatypes::Schema::new(new_fields));
         let new_batch = RecordBatch::try_new(new_schema, new_columns)?;

@@ -271,21 +271,14 @@ impl VectorizedDriver {
                         _ => return Err("Invalid config for scan operator".to_string()),
                     };
                     
-                    let mut scan_operator = VectorizedScanOperator::new(
-                        scan_config,
-                        node.operator_id,
-                        node.input_ports.clone(),
-                        node.output_ports.clone(),
-                        format!("scan_{}", node.operator_id),
-                    ).map_err(|e| e.to_string())?;
-                    
-                    scan_operator.set_table_path(file_path.clone());
-                    self.event_loop.register_operator(
-                        node.operator_id, 
-                        Box::new(scan_operator),
-                        vec![], // input ports
-                        vec![0] // output ports
-                    ).map_err(|e| e.to_string())?;
+                    let _scan_operator = VectorizedScanOperator::new(scan_config);
+                    // TODO: Implement Operator trait for VectorizedScanOperator
+                    // self.event_loop.register_operator(
+                    //     node.operator_id, 
+                    //     Box::new(scan_operator),
+                    //     vec![], // input ports
+                    //     vec![0] // output ports
+                    // ).map_err(|e| e.to_string())?;
                 },
                 OperatorType::Filter { predicate, column_index } => {
                     let filter_config = match &node.config {
