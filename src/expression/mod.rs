@@ -98,6 +98,13 @@ impl VectorizedExpressionEngine {
         })
     }
 
+    /// 编译表达式
+    pub fn compile(&self, expression: &ast::Expression) -> Result<()> {
+        // For now, just validate the expression
+        // TODO: Implement actual compilation
+        Ok(())
+    }
+
     /// 执行表达式
     pub fn execute(&mut self, expression: &ast::Expression, batch: &RecordBatch) -> Result<ArrayRef> {
         // 如果启用缓存，先尝试从缓存获取

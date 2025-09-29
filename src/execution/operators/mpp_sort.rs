@@ -389,6 +389,12 @@ impl MppSortOperatorFactory {
             memory_limit,
             use_external_sort: true,
             external_sort_dir: Some("/tmp/sort".to_string()),
+            sort_algorithm: SortAlgorithm::QuickSort,
+            enable_parallel_sort: false,
+            parallel_threads: 1,
+            enable_simd_sort: false,
+            enable_radix_sort: false,
+            enable_stable_sort: false,
         };
         
         Ok(MppSortOperator::new(operator_id, config))
@@ -408,6 +414,12 @@ impl MppSortOperatorFactory {
             memory_limit,
             use_external_sort: true,
             external_sort_dir: Some("/tmp/sort".to_string()),
+            sort_algorithm: SortAlgorithm::QuickSort,
+            enable_parallel_sort: false,
+            parallel_threads: 1,
+            enable_simd_sort: false,
+            enable_radix_sort: false,
+            enable_stable_sort: false,
         };
         
         MppTopNOperator::new(operator_id, limit, sort_config)

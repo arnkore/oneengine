@@ -132,6 +132,8 @@ impl MppDistinctOperator {
             jit_threshold: 100,
             cache_size_limit: 1024 * 1024 * 1024, // 1GB
             batch_size: 8192,
+            cache_max_entries: 1000,
+            cache_max_memory: 1024 * 1024 * 1024, // 1GB
         };
         
         // Create expression engine

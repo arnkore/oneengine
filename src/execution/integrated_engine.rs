@@ -118,6 +118,7 @@ pub struct IntegratedEngine {
 
 /// Execution statistics
 #[derive(Debug, Default)]
+#[derive(Clone)]
 pub struct ExecutionStats {
     pub total_pipelines: u64,
     pub completed_pipelines: u64,

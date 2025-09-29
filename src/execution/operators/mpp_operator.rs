@@ -151,8 +151,18 @@ pub struct MppOperatorFactory;
 impl MppOperatorFactory {
     /// Create data exchange operator
     pub fn create_data_exchange(target_workers: Vec<WorkerId>) -> Box<dyn MppOperator> {
-        use crate::execution::operators::mpp_exchange::DataExchangeOperator;
-        Box::new(DataExchangeOperator::new(target_workers))
+        use crate::execution::operators::mpp_exchange::{DataExchangeOperator, ExchangeConfig};
+        use std::collections::HashMap;
+        use uuid::Uuid;
+        
+        let config = ExchangeConfig::default();
+        let exchange_channels = HashMap::new();
+        Box::new(DataExchangeOperator::new(
+            Uuid::new_v4(),
+            config,
+            target_workers,
+            exchange_channels,
+        ))
     }
     
     /// Create scan operator
