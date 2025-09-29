@@ -182,12 +182,12 @@ impl AggregationState {
                 }
             }
             AggregationFunction::Min => {
-                if self.min.is_none() || value < self.min.as_ref().unwrap() {
+                if self.min.is_none() || self.compare_values(&value, self.min.as_ref().unwrap()) == std::cmp::Ordering::Less {
                     self.min = Some(value.clone());
                 }
             }
             AggregationFunction::Max => {
-                if self.max.is_none() || value > self.max.as_ref().unwrap() {
+                if self.max.is_none() || self.compare_values(&value, self.max.as_ref().unwrap()) == std::cmp::Ordering::Greater {
                     self.max = Some(value.clone());
                 }
             }
@@ -211,6 +211,22 @@ impl AggregationState {
         match value {
             serde_json::Value::Number(n) => n.as_f64(),
             _ => None,
+        }
+    }
+    
+    fn compare_values(&self, a: &serde_json::Value, b: &serde_json::Value) -> std::cmp::Ordering {
+        match (a, b) {
+            (serde_json::Value::Number(a_num), serde_json::Value::Number(b_num)) => {
+                if let (Some(a_f64), Some(b_f64)) = (a_num.as_f64(), b_num.as_f64()) {
+                    a_f64.partial_cmp(&b_f64).unwrap_or(std::cmp::Ordering::Equal)
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            }
+            (serde_json::Value::String(a_str), serde_json::Value::String(b_str)) => {
+                a_str.cmp(b_str)
+            }
+            _ => std::cmp::Ordering::Equal,
         }
     }
     
@@ -413,7 +429,10 @@ impl MppAggregationOperator {
                 }
             }
             // Convert to Arrow array (simplified)
-            let array = StringArray::from(values);
+            let string_values: Vec<Option<String>> = values.into_iter()
+                .map(|v| v.map(|val| val.to_string()))
+                .collect();
+            let array = StringArray::from(string_values);
             group_columns.push(Arc::new(array) as Arc<dyn Array>);
         }
         
@@ -472,14 +491,10 @@ impl MppAggregationOperatorFactory {
     ) -> Result<MppAggregationOperator> {
         Ok(MppAggregationOperator {
             operator_id,
-            partition_id: Uuid::new_v4(),
             config,
-            output_schema,
-            memory_limit,
-            group_by_columns: Vec::new(),
-            aggregation_columns: Vec::new(),
-            buffered_data: Vec::new(),
+            hash_table: HashMap::new(),
             stats: AggregationStats::default(),
+            memory_usage: 0,
         })
     }
 

@@ -149,7 +149,8 @@ impl IntegratedEngine {
         let lake_reader = UnifiedLakeReader::new(config.lake_config.clone());
 
         // Set vectorized driver in scheduler
-        scheduler.set_vectorized_driver(Arc::new(vectorized_driver.clone())).await?;
+        let vectorized_driver_arc = Arc::new(vectorized_driver.clone());
+        scheduler.set_vectorized_driver(vectorized_driver_arc.clone()).await?;
 
         Ok(Self {
             config,
@@ -208,7 +209,7 @@ impl IntegratedEngine {
             stats.total_pipelines += 1;
             stats.completed_pipelines += 1;
             stats.total_execution_time_ms += start_time.elapsed().as_millis() as u64;
-            stats.total_rows_processed += results.iter().map(|batch| batch.num_rows() as u64).sum();
+            stats.total_rows_processed += results.iter().map(|batch| batch.num_rows() as u64).sum::<u64>();
         }
         
         // Remove from active pipelines
