@@ -308,7 +308,8 @@ impl MppWindowOperator {
             let mut processed_batch = batch;
             
             // Apply each window function
-            for window_func in &self.config.window_functions {
+            let window_functions = self.config.window_functions.clone();
+            for window_func in &window_functions {
                 processed_batch = self.apply_window_function(processed_batch, window_func)?;
             }
             

@@ -332,15 +332,7 @@ impl VectorizedDriver {
                         _ => return Err("Invalid config for aggregator operator".to_string()),
                     };
                     
-                    let aggregator_operator = VectorizedAggregator::new(
-                        aggregator_config,
-                        group_columns.clone(),
-                        agg_functions.clone(),
-                        node.operator_id,
-                        node.input_ports.clone(),
-                        node.output_ports.clone(),
-                        format!("aggregator_{}", node.operator_id),
-                    ).map_err(|e| e.to_string())?;
+                    let aggregator_operator = VectorizedAggregator::new(aggregator_config);
                     
                     self.event_loop.register_operator(
                         node.operator_id, 

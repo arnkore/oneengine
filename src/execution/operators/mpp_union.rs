@@ -533,13 +533,12 @@ impl MppOperator for MppUnionOperator {
     }
     
     fn process_partition(&mut self, _partition_id: PartitionId, data: RecordBatch) -> Result<RecordBatch> {
-        let schema = data.schema();
+        let schema = data.schema().clone();
         self.add_left_batch(data)?;
         let results = self.process_union()?;
         
         if results.is_empty() {
-            let schema = data.schema();
-            let empty_batch = RecordBatch::new_empty(schema);
+            let empty_batch = RecordBatch::new_empty(Arc::new(schema));
             Ok(empty_batch)
         } else {
             Ok(results[0].clone())

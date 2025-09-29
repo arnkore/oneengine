@@ -122,6 +122,17 @@ pub struct RetryConfig {
     pub backoff_multiplier: f64,
 }
 
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_delay: std::time::Duration::from_millis(100),
+            max_delay: std::time::Duration::from_secs(10),
+            backoff_multiplier: 2.0,
+        }
+    }
+}
+
 /// MPP operator statistics
 #[derive(Debug, Clone, Default)]
 pub struct MppOperatorStats {
