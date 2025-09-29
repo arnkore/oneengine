@@ -240,8 +240,10 @@ impl DataExchangeOperator {
     /// Broadcast batch to all workers
     async fn broadcast_batch(&mut self, batch: RecordBatch) -> Result<()> {
         let target_workers = self.target_workers.clone();
+        let exchange_channels = self.exchange_channels.clone();
+        
         for worker_id in &target_workers {
-            if let Some(channel) = self.exchange_channels.get(worker_id) {
+            if let Some(channel) = exchange_channels.get(worker_id) {
                 self.send_batch_with_retry(channel, batch.clone(), worker_id).await?;
             }
         }
@@ -285,9 +287,10 @@ impl DataExchangeOperator {
     async fn round_robin_batch(&mut self, batch: RecordBatch) -> Result<()> {
         // Simple round-robin distribution
         let target_workers = self.target_workers.clone();
+        let exchange_channels = self.exchange_channels.clone();
         let worker_idx = (self.stats.batches_sent as usize) % target_workers.len();
         if let Some(worker_id) = target_workers.get(worker_idx) {
-            if let Some(channel) = self.exchange_channels.get(worker_id) {
+            if let Some(channel) = exchange_channels.get(worker_id) {
                 self.send_batch_with_retry(channel, batch.clone(), worker_id).await?;
             }
         }
@@ -298,7 +301,8 @@ impl DataExchangeOperator {
     
     /// Single distribution
     async fn single_distribute_batch(&mut self, batch: RecordBatch, target_worker: &WorkerId) -> Result<()> {
-        if let Some(channel) = self.exchange_channels.get(target_worker) {
+        let exchange_channels = self.exchange_channels.clone();
+        if let Some(channel) = exchange_channels.get(target_worker) {
             self.send_batch_with_retry(channel, batch.clone(), target_worker).await?;
         }
         self.stats.batches_sent += 1;
