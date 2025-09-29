@@ -260,17 +260,22 @@ impl DataExchangeOperator {
             let target_workers = self.target_workers.clone();
             let exchange_channels = self.exchange_channels.clone();
             
+            // Collect all sends first to avoid borrow checker issues
+            let mut sends = Vec::new();
             for row_idx in 0..batch.num_rows() {
                 let partition = partitioner.get_partition(&batch, row_idx)?;
                 let worker_idx = partition % target_workers.len();
                 
-                // For simplicity, we'll send the entire batch to the determined worker
-                // In a real implementation, you'd slice the batch by rows
                 if let Some(worker_id) = target_workers.get(worker_idx) {
                     if let Some(channel) = exchange_channels.get(worker_id) {
-                        self.send_batch_with_retry(channel, batch.clone(), worker_id).await?;
+                        sends.push((channel.clone(), batch.clone(), worker_id.clone()));
                     }
                 }
+            }
+            
+            // Execute all sends
+            for (channel, batch, worker_id) in sends {
+                self.send_batch_with_retry(&channel, batch, &worker_id).await?;
             }
         }
         self.stats.batches_sent += 1;
