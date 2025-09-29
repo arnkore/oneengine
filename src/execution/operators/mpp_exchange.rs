@@ -51,8 +51,14 @@ pub enum ExchangeStrategy {
     Single { target_worker: WorkerId },
 }
 
+impl Default for ExchangeStrategy {
+    fn default() -> Self {
+        ExchangeStrategy::RoundRobin
+    }
+}
+
 /// Exchange operator configuration
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ExchangeConfig {
     /// Exchange strategy
     pub strategy: ExchangeStrategy,
@@ -66,6 +72,18 @@ pub struct ExchangeConfig {
     pub retry_config: RetryConfig,
 }
 
+impl Default for ExchangeConfig {
+    fn default() -> Self {
+        Self {
+            strategy: ExchangeStrategy::default(),
+            output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+            buffer_size: 1024 * 1024, // 1MB
+            compression_enabled: true,
+            retry_config: RetryConfig::default(),
+        }
+    }
+}
+
 /// Retry configuration
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -77,6 +95,17 @@ pub struct RetryConfig {
     pub max_delay: std::time::Duration,
     /// Backoff multiplier
     pub backoff_multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_delay: std::time::Duration::from_millis(100),
+            max_delay: std::time::Duration::from_secs(10),
+            backoff_multiplier: 2.0,
+        }
+    }
 }
 
 /// Data exchange operator
@@ -493,6 +522,7 @@ impl MppOperator for DataExchangeOperator {
             network_time: self.stats.network_time,
             retry_count: self.stats.retry_count,
             error_count: self.stats.error_count,
+            memory_usage: 0,
         }
     }
     

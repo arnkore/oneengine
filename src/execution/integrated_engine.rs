@@ -149,7 +149,7 @@ impl IntegratedEngine {
         let lake_reader = UnifiedLakeReader::new(config.lake_config.clone());
 
         // Set vectorized driver in scheduler
-        scheduler.set_vectorized_driver(vectorized_driver.clone()).await?;
+        scheduler.set_vectorized_driver(Arc::new(vectorized_driver.clone())).await?;
 
         Ok(Self {
             config,

@@ -92,7 +92,7 @@ pub struct GroupByColumn {
 }
 
 /// MPP aggregation configuration
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MppAggregationConfig {
     /// Group by columns
     pub group_by_columns: Vec<GroupByColumn>,
@@ -106,6 +106,19 @@ pub struct MppAggregationConfig {
     pub memory_limit: usize,
     /// Spill threshold
     pub spill_threshold: f64,
+}
+
+impl Default for MppAggregationConfig {
+    fn default() -> Self {
+        Self {
+            group_by_columns: Vec::new(),
+            aggregation_columns: Vec::new(),
+            output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+            is_final: false,
+            memory_limit: 1024 * 1024 * 1024, // 1GB
+            spill_threshold: 0.8,
+        }
+    }
 }
 
 /// MPP aggregation operator

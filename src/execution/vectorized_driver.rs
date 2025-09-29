@@ -33,11 +33,21 @@ pub struct VectorizedScanConfig {
 }
 
 /// Vectorized aggregator configuration
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct VectorizedAggregatorConfig {
     pub group_by_columns: Vec<usize>,
     pub aggregation_functions: Vec<String>,
     pub output_schema: SchemaRef,
+}
+
+impl Default for VectorizedAggregatorConfig {
+    fn default() -> Self {
+        Self {
+            group_by_columns: Vec::new(),
+            aggregation_functions: Vec::new(),
+            output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+        }
+    }
 }
 
 /// Vectorized scan operator (placeholder)
