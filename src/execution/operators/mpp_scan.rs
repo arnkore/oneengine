@@ -191,8 +191,8 @@ impl MppScanOperator {
     
     /// Set predicate expression
     pub fn set_predicate(&mut self, predicate: Expression) -> Result<()> {
-        let compiled = self.expression_engine.compile(&predicate)?;
-        self.compiled_predicate = Some(compiled);
+        self.expression_engine.compile(&predicate)?;
+        self.compiled_predicate = Some(predicate);
         Ok(())
     }
     

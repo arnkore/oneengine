@@ -109,7 +109,7 @@ impl Default for LakeReaderConfig {
 pub struct IntegratedEngine {
     config: IntegratedEngineConfig,
     mpp_engine: MppExecutionEngine,
-    vectorized_driver: VectorizedDriver,
+    vectorized_driver: Arc<VectorizedDriver>,
     scheduler: Arc<PushScheduler>,
     lake_reader: UnifiedLakeReader,
     active_pipelines: Arc<tokio::sync::RwLock<HashMap<Uuid, Pipeline>>>,
@@ -149,7 +149,7 @@ impl IntegratedEngine {
         let lake_reader = UnifiedLakeReader::new(config.lake_config.clone());
 
         // Set vectorized driver in scheduler
-        scheduler.set_vectorized_driver(Arc::new(vectorized_driver.clone())).await?;
+        scheduler.set_vectorized_driver(vectorized_driver.clone()).await?;
 
         Ok(Self {
             config,
@@ -431,7 +431,7 @@ impl IntegratedEngineFactory {
             ),
             vectorized_config: VectorizedDriverConfig::default(),
             pipeline_config: PipelineConfig::default(),
-            lake_config: LakeReaderConfig::default(),
+            lake_config: UnifiedLakeReaderConfig::default(),
         };
         
         IntegratedEngine::new(config).await
