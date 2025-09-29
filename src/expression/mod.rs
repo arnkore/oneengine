@@ -49,6 +49,10 @@ pub struct ExpressionEngineConfig {
     pub enable_simd: bool,
     /// 是否启用表达式融合
     pub enable_fusion: bool,
+    /// JIT编译阈值
+    pub jit_threshold: usize,
+    /// 缓存大小限制
+    pub cache_size_limit: usize,
 }
 
 impl Default for ExpressionEngineConfig {
@@ -61,6 +65,8 @@ impl Default for ExpressionEngineConfig {
             enable_jit: false,
             enable_simd: true,
             enable_fusion: true,
+            jit_threshold: 100,
+            cache_size_limit: 1024 * 1024 * 1024, // 1GB
         }
     }
 }

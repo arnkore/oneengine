@@ -348,7 +348,7 @@ impl IntegratedEngine {
     /// Get execution statistics
     pub async fn get_execution_stats(&self) -> ExecutionStats {
         let stats = self.execution_stats.read().await;
-        stats.clone()
+        (*stats).clone()
     }
 
     /// Get active pipelines

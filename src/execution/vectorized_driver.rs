@@ -111,7 +111,6 @@ impl Default for VectorizedDriverConfig {
 }
 
 /// 向量化执行器
-#[derive(Clone)]
 pub struct VectorizedDriver {
     config: VectorizedDriverConfig,
     event_loop: EventLoop,
