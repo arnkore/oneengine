@@ -31,6 +31,7 @@ pub mod simd;
 pub mod network;
 pub mod serialization;
 pub mod expression;
+pub mod performance;
 
 // Re-export commonly used types
 pub use execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
