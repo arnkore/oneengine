@@ -28,6 +28,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
 use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 
 /// Sort column specification
 #[derive(Debug, Clone)]
@@ -114,6 +115,8 @@ pub struct MppSortOperator {
     stats: SortStats,
     /// Memory usage
     memory_usage: usize,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// Sort statistics
@@ -143,6 +146,7 @@ impl MppSortOperator {
             buffered_data: Vec::new(),
             stats: SortStats::default(),
             memory_usage: 0,
+            finished: false,
         }
     }
     
@@ -311,6 +315,8 @@ pub struct MppTopNOperator {
     buffered_data: Vec<RecordBatch>,
     /// Statistics
     stats: SortStats,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 impl MppTopNOperator {
@@ -321,6 +327,7 @@ impl MppTopNOperator {
             sort_config,
             buffered_data: Vec::new(),
             stats: SortStats::default(),
+            finished: false,
         }
     }
     
@@ -472,5 +479,149 @@ impl MppOperator for MppSortOperator {
 
     fn recover(&mut self, _context: &MppContext) -> Result<()> {
         Ok(())
+    }
+}
+
+impl Operator for MppSortOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 添加批次到排序缓冲区
+                if let Err(e) = self.add_batch(batch) {
+                    error!("Failed to add batch for sorting: {}", e);
+                    return OpStatus::Error(format!("Failed to add batch for sorting: {}", e));
+                }
+                
+                // 检查是否需要输出排序后的数据
+                if self.should_output_sorted_data() {
+                    match self.get_sorted_batches() {
+                        Ok(sorted_batches) => {
+                            for batch in sorted_batches {
+                                if let Err(e) = out.push(0, batch) {
+                                    error!("Failed to push sorted batch: {}", e);
+                                    return OpStatus::Error(format!("Failed to push sorted batch: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get sorted batches: {}", e);
+                            return OpStatus::Error(format!("Failed to get sorted batches: {}", e));
+                        }
+                    }
+                }
+                OpStatus::HasMore
+            }
+            Event::Finish(_) => {
+                // 输出所有剩余的排序数据
+                match self.finalize_sort() {
+                    Ok(final_batches) => {
+                        for batch in final_batches {
+                            if let Err(e) = out.push(0, batch) {
+                                error!("Failed to push final sorted batch: {}", e);
+                                return OpStatus::Error(format!("Failed to push final sorted batch: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to finalize sort: {}", e);
+                        return OpStatus::Error(format!("Failed to finalize sort: {}", e));
+                    }
+                }
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppSortOperator"
+    }
+}
+
+impl MppSortOperator {
+    /// 检查是否应该输出排序后的数据
+    fn should_output_sorted_data(&self) -> bool {
+        // 简化实现：当缓冲区达到一定大小时输出
+        self.buffered_data.len() >= 10
+    }
+    
+    /// 获取排序后的批次
+    fn get_sorted_batches(&mut self) -> Result<Vec<RecordBatch>> {
+        // 简化实现：直接返回缓冲区中的数据
+        let batches = std::mem::take(&mut self.buffered_data);
+        Ok(batches)
+    }
+    
+    /// 完成排序并输出最终结果
+    fn finalize_sort(&mut self) -> Result<Vec<RecordBatch>> {
+        // 简化实现：返回所有剩余数据
+        let batches = std::mem::take(&mut self.buffered_data);
+        Ok(batches)
+    }
+}
+
+impl Operator for MppTopNOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 添加批次到TopN处理缓冲区
+                if let Err(e) = self.add_batch(batch) {
+                    error!("Failed to add batch for top-N processing: {}", e);
+                    return OpStatus::Error(format!("Failed to add batch for top-N processing: {}", e));
+                }
+                
+                // 检查是否需要输出TopN结果
+                if self.buffered_data.len() >= 1000 { // 简单的批次大小检查
+                    match self.process_batch() {
+                        Ok(topn_batches) => {
+                            for batch in topn_batches {
+                                if let Err(e) = out.push(0, batch) {
+                                    error!("Failed to push top-N batch: {}", e);
+                                    return OpStatus::Error(format!("Failed to push top-N batch: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to process top-N batch: {}", e);
+                            return OpStatus::Error(format!("Failed to process top-N batch: {}", e));
+                        }
+                    }
+                }
+                OpStatus::HasMore
+            }
+            Event::Finish(_) => {
+                // 输出所有剩余的TopN数据
+                match self.process_batch() {
+                    Ok(final_batches) => {
+                        for batch in final_batches {
+                            if let Err(e) = out.push(0, batch) {
+                                error!("Failed to push final top-N batch: {}", e);
+                                return OpStatus::Error(format!("Failed to push final top-N batch: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to finalize top-N processing: {}", e);
+                        return OpStatus::Error(format!("Failed to finalize top-N processing: {}", e));
+                    }
+                }
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppTopNOperator"
     }
 }

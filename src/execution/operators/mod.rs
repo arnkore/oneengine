@@ -36,6 +36,7 @@ pub mod mpp_scan;
 pub mod mpp_window;
 pub mod mpp_distinct;
 pub mod mpp_union;
+pub mod mpp_sink;
 
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::SchemaRef;

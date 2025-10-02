@@ -30,6 +30,7 @@ use std::time::Instant;
 use std::collections::HashMap;
 
 use super::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 use crate::datalake::unified_lake_reader::{
     UnifiedLakeReader, UnifiedLakeReaderConfig, LakeFormat, UnifiedPredicate,
     TimeTravelConfig, IncrementalReadConfig, PartitionPruningInfo, ColumnProjection,
@@ -66,6 +67,8 @@ pub struct MppScanOperator {
     table_metadata: Option<TableMetadata>,
     /// Scan statistics
     scan_stats: ScanStats,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// MPP scan configuration
@@ -177,6 +180,7 @@ impl MppScanOperator {
             current_snapshot_id: None,
             table_metadata: None,
             scan_stats: ScanStats::default(),
+            finished: false,
         })
     }
     
@@ -481,5 +485,85 @@ impl MppScanOperatorFactory {
         config: MppScanConfig,
     ) -> Result<MppScanOperator> {
         MppScanOperator::new(operator_id, partition_id, config)
+    }
+}
+
+impl Operator for MppScanOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::StartScan { file_path } => {
+                if let Some(ref current_path) = self.current_table_path {
+                    if file_path == *current_path {
+                        match self.scan_next_batch() {
+                            Ok(Some(batch)) => {
+                                // 应用SIMD优化
+                                let optimized_batch = if self.config.enable_simd {
+                                    self.apply_simd_optimization(&batch).unwrap_or(batch)
+                                } else {
+                                    batch
+                                };
+                                
+                                if let Err(e) = out.push(0, optimized_batch) {
+                                    error!("Failed to push batch: {}", e);
+                                    return OpStatus::Error(format!("Failed to push batch: {}", e));
+                                }
+                                
+                                OpStatus::HasMore
+                            }
+                            Ok(None) => {
+                                self.finished = true;
+                                OpStatus::Finished
+                            }
+                            Err(e) => {
+                                error!("Scan error: {}", e);
+                                OpStatus::Error(format!("Scan error: {}", e))
+                            }
+                        }
+                    } else {
+                        OpStatus::Ready
+                    }
+                } else {
+                    // 设置当前表路径
+                    self.current_table_path = Some(file_path);
+                    OpStatus::Ready
+                }
+            }
+            Event::Data { .. } => {
+                // 扫描算子不处理输入数据
+                OpStatus::Ready
+            }
+            Event::Finish(_) => {
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppScanOperator"
+    }
+}
+
+impl MppScanOperator {
+    /// 应用SIMD优化处理
+    fn apply_simd_optimization(&self, batch: &RecordBatch) -> Result<RecordBatch> {
+        if !self.config.enable_simd {
+            return Ok(batch.clone());
+        }
+        
+        // 使用SIMD优化的数据处理
+        self.process_batch_with_simd(batch)
+    }
+    
+    /// 使用SIMD处理批次
+    fn process_batch_with_simd(&self, batch: &RecordBatch) -> Result<RecordBatch> {
+        // 这里应该调用SIMD优化的处理函数
+        // 简化实现：直接返回原批次
+        Ok(batch.clone())
     }
 }

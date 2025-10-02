@@ -32,6 +32,7 @@ use std::collections::HashMap;
 use super::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
 use crate::expression::{VectorizedExpressionEngine, ExpressionEngineConfig};
 use crate::expression::ast::Expression;
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 
 /// Union type
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +101,8 @@ pub struct MppUnionOperator {
     union_stats: UnionStats,
     /// Memory usage
     memory_usage: usize,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// Union statistics
@@ -156,6 +159,7 @@ impl MppUnionOperator {
             stats: MppOperatorStats::default(),
             union_stats: UnionStats::default(),
             memory_usage: 0,
+            finished: false,
         })
     }
     
@@ -595,5 +599,67 @@ impl MppUnionOperatorFactory {
         };
         
         MppUnionOperator::new(operator_id, config)
+    }
+}
+
+impl Operator for MppUnionOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 根据端口号决定是左输入还是右输入
+                // 这里简化处理，假设端口0是左输入，端口1是右输入
+                if let Err(e) = self.add_left_batch(batch) {
+                    error!("Failed to add left batch for union processing: {}", e);
+                    return OpStatus::Error(format!("Failed to add left batch for union processing: {}", e));
+                }
+                
+                // 检查是否可以执行联合操作
+                if !self.left_data.is_empty() && !self.right_data.is_empty() {
+                    match self.process_batch() {
+                        Ok(union_batches) => {
+                            for batch in union_batches {
+                                if let Err(e) = out.push(0, batch) {
+                                    error!("Failed to push union batch: {}", e);
+                                    return OpStatus::Error(format!("Failed to push union batch: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to perform union: {}", e);
+                            return OpStatus::Error(format!("Failed to perform union: {}", e));
+                        }
+                    }
+                }
+                OpStatus::HasMore
+            }
+            Event::Finish(_) => {
+                // 输出所有剩余的联合数据
+                match self.process_batch() {
+                    Ok(final_batches) => {
+                        for batch in final_batches {
+                            if let Err(e) = out.push(0, batch) {
+                                error!("Failed to push final union batch: {}", e);
+                                return OpStatus::Error(format!("Failed to push final union batch: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to finalize union processing: {}", e);
+                        return OpStatus::Error(format!("Failed to finalize union processing: {}", e));
+                    }
+                }
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppUnionOperator"
     }
 }

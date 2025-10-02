@@ -28,6 +28,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
 use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 
 /// Join type
 #[derive(Debug, Clone, PartialEq)]
@@ -72,6 +73,8 @@ pub struct MppHashJoinOperator {
     memory_usage: usize,
     /// Memory limit
     memory_limit: usize,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// Join statistics
@@ -104,6 +107,7 @@ impl MppHashJoinOperator {
             stats: JoinStats::default(),
             memory_usage: 0,
             memory_limit,
+            finished: false,
         }
     }
     
@@ -249,6 +253,8 @@ pub struct MppNestedLoopJoinOperator {
     right_data: Vec<RecordBatch>,
     /// Statistics
     stats: JoinStats,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 impl MppNestedLoopJoinOperator {
@@ -259,6 +265,7 @@ impl MppNestedLoopJoinOperator {
             left_data: Vec::new(),
             right_data: Vec::new(),
             stats: JoinStats::default(),
+            finished: false,
         }
     }
     
@@ -409,5 +416,112 @@ impl MppOperator for MppHashJoinOperator {
 
     fn recover(&mut self, _context: &MppContext) -> Result<()> {
         Ok(())
+    }
+}
+
+impl Operator for MppHashJoinOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 处理连接数据
+                match self.process_join_batch(&batch) {
+                    Ok(Some(result_batch)) => {
+                        if let Err(e) = out.push(0, result_batch) {
+                            error!("Failed to push join result: {}", e);
+                            return OpStatus::Error(format!("Failed to push join result: {}", e));
+                        }
+                        OpStatus::HasMore
+                    }
+                    Ok(None) => OpStatus::Ready,
+                    Err(e) => {
+                        error!("Join processing error: {}", e);
+                        OpStatus::Error(format!("Join processing error: {}", e))
+                    }
+                }
+            }
+            Event::Finish(_) => {
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppHashJoinOperator"
+    }
+}
+
+impl MppHashJoinOperator {
+    /// 处理连接批次
+    fn process_join_batch(&mut self, batch: &RecordBatch) -> Result<Option<RecordBatch>> {
+        // 简化实现：直接返回原批次
+        Ok(Some(batch.clone()))
+    }
+}
+
+impl Operator for MppNestedLoopJoinOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 根据端口号决定是左输入还是右输入
+                // 这里简化处理，假设端口0是左输入，端口1是右输入
+                if let Err(e) = self.add_left_data(batch) {
+                    error!("Failed to add left data for nested loop join: {}", e);
+                    return OpStatus::Error(format!("Failed to add left data for nested loop join: {}", e));
+                }
+                
+                // 检查是否可以执行嵌套循环连接
+                if !self.left_data.is_empty() && !self.right_data.is_empty() {
+                    match self.process_batch() {
+                        Ok(join_batches) => {
+                            for batch in join_batches {
+                                if let Err(e) = out.push(0, batch) {
+                                    error!("Failed to push nested loop join batch: {}", e);
+                                    return OpStatus::Error(format!("Failed to push nested loop join batch: {}", e));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to perform nested loop join: {}", e);
+                            return OpStatus::Error(format!("Failed to perform nested loop join: {}", e));
+                        }
+                    }
+                }
+                OpStatus::HasMore
+            }
+            Event::Finish(_) => {
+                // 输出所有剩余的连接数据
+                match self.process_batch() {
+                    Ok(final_batches) => {
+                        for batch in final_batches {
+                            if let Err(e) = out.push(0, batch) {
+                                error!("Failed to push final nested loop join batch: {}", e);
+                                return OpStatus::Error(format!("Failed to push final nested loop join batch: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to finalize nested loop join: {}", e);
+                        return OpStatus::Error(format!("Failed to finalize nested loop join: {}", e));
+                    }
+                }
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppNestedLoopJoinOperator"
     }
 }

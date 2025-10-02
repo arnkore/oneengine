@@ -29,6 +29,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use tracing::{debug, warn, error};
 use super::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 
 /// Worker node identifier
 pub type WorkerId = String;
@@ -122,6 +123,8 @@ pub struct DataExchangeOperator {
     stats: ExchangeStats,
     /// Hash partitioner
     hash_partitioner: Option<HashPartitioner>,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// Hash partitioner for data distribution
@@ -232,6 +235,7 @@ impl DataExchangeOperator {
             exchange_channels,
             stats: ExchangeStats::default(),
             hash_partitioner,
+            finished: false,
         }
     }
     
@@ -530,5 +534,34 @@ impl MppOperator for DataExchangeOperator {
         // Reset statistics for recovery
         self.reset_stats();
         Ok(())
+    }
+}
+
+impl Operator for DataExchangeOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 交换数据批次
+                if let Err(e) = futures::executor::block_on(self.exchange_batch(batch)) {
+                    error!("Failed to exchange batch: {}", e);
+                    return OpStatus::Error(format!("Failed to exchange batch: {}", e));
+                }
+                OpStatus::Ready
+            }
+            Event::Finish(_) => {
+                // 完成数据交换
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "DataExchangeOperator"
     }
 }

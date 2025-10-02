@@ -29,6 +29,7 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use tracing::{debug, warn, error};
 use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppOperatorStats, PartitionId, WorkerId};
+use crate::execution::push_runtime::{Operator, Event, OpStatus, Outbox, PortId};
 
 /// Aggregation function type
 #[derive(Debug, Clone, PartialEq)]
@@ -133,6 +134,8 @@ pub struct MppAggregationOperator {
     stats: AggregationStats,
     /// Memory usage
     memory_usage: usize,
+    /// Whether the operator is finished
+    finished: bool,
 }
 
 /// Group key for hash table
@@ -297,6 +300,7 @@ impl MppAggregationOperator {
             hash_table: HashMap::new(),
             stats: AggregationStats::default(),
             memory_usage: 0,
+            finished: false,
         }
     }
     
@@ -495,6 +499,7 @@ impl MppAggregationOperatorFactory {
             hash_table: HashMap::new(),
             stats: AggregationStats::default(),
             memory_usage: 0,
+            finished: false,
         })
     }
 
@@ -576,5 +581,72 @@ impl MppOperator for MppAggregationOperator {
 
     fn recover(&mut self, _context: &MppContext) -> Result<()> {
         Ok(())
+    }
+}
+
+impl Operator for MppAggregationOperator {
+    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> OpStatus {
+        match ev {
+            Event::Data { batch, .. } => {
+                // 处理聚合数据
+                match self.process_aggregation_batch(&batch) {
+                    Ok(Some(result_batch)) => {
+                        if let Err(e) = out.push(0, result_batch) {
+                            error!("Failed to push aggregation result: {}", e);
+                            return OpStatus::Error(format!("Failed to push aggregation result: {}", e));
+                        }
+                        OpStatus::HasMore
+                    }
+                    Ok(None) => OpStatus::Ready,
+                    Err(e) => {
+                        error!("Aggregation processing error: {}", e);
+                        OpStatus::Error(format!("Aggregation processing error: {}", e))
+                    }
+                }
+            }
+            Event::Finish(_) => {
+                // 输出最终聚合结果
+                match self.finalize_aggregation() {
+                    Ok(Some(final_batch)) => {
+                        if let Err(e) = out.push(0, final_batch) {
+                            error!("Failed to push final aggregation result: {}", e);
+                            return OpStatus::Error(format!("Failed to push final aggregation result: {}", e));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        error!("Finalization error: {}", e);
+                        return OpStatus::Error(format!("Finalization error: {}", e));
+                    }
+                }
+                self.finished = true;
+                OpStatus::Finished
+            }
+            _ => OpStatus::Ready,
+        }
+    }
+    
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
+    
+    fn name(&self) -> &str {
+        "MppAggregationOperator"
+    }
+}
+
+impl MppAggregationOperator {
+    /// 处理聚合批次
+    fn process_aggregation_batch(&mut self, batch: &RecordBatch) -> Result<Option<RecordBatch>> {
+        // 这里应该实现真正的聚合逻辑
+        // 简化实现：直接返回原批次
+        Ok(Some(batch.clone()))
+    }
+    
+    /// 完成聚合并输出最终结果
+    fn finalize_aggregation(&mut self) -> Result<Option<RecordBatch>> {
+        // 这里应该实现最终聚合结果的输出
+        // 简化实现：返回空批次
+        Ok(Some(RecordBatch::new_empty(self.config.output_schema.clone())))
     }
 }

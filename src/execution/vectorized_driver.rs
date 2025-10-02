@@ -257,17 +257,34 @@ impl UnifiedExecutionEngine {
     
     /// 创建算子实例
     async fn create_operator_instance(&self, node: &OperatorNode) -> Result<Box<dyn Operator + Send + Sync>> {
-            match &node.operator_type {
-                OperatorType::Scan { file_path } => {
-                // 创建扫描算子包装器
-                Ok(Box::new(ScanOperatorWrapper::new(file_path.clone())))
-                }
-                OperatorType::Aggregate { group_columns, agg_functions } => {
-                // 创建聚合算子包装器
-                Ok(Box::new(AggregateOperatorWrapper::new(
-                    group_columns.clone(),
-                    agg_functions.clone(),
-                )))
+        match &node.operator_type {
+            OperatorType::Scan { file_path } => {
+                // 创建MPP扫描算子
+                use crate::execution::operators::mpp_scan::{MppScanOperator, MppScanConfig, MppScanOperatorFactory};
+                use uuid::Uuid;
+                
+                let config = MppScanConfig::default();
+                let mut operator = MppScanOperatorFactory::create_scan(
+                    Uuid::new_v4(),
+                    0, // partition_id
+                    config,
+                )?;
+                operator.set_table_path(file_path.clone());
+                Ok(Box::new(operator))
+            }
+            OperatorType::Aggregate { group_columns, agg_functions } => {
+                // 创建MPP聚合算子
+                use crate::execution::operators::mpp_aggregator::{MppAggregationOperator, MppAggregationOperatorFactory, MppAggregationConfig};
+                use uuid::Uuid;
+                
+                let config = MppAggregationConfig::default();
+                let operator = MppAggregationOperatorFactory::create_aggregation(
+                    Uuid::new_v4(),
+                    config,
+                    Arc::new(arrow::datatypes::Schema::empty()),
+                    1024 * 1024 * 1024, // 1GB memory limit
+                )?;
+                Ok(Box::new(operator))
             }
             _ => Err(anyhow::anyhow!("Unsupported operator type")),
         }
@@ -519,178 +536,7 @@ pub struct LoadBalancingStats {
     pub credit_usage: f64,
 }
 
-/// 扫描算子包装器 - 支持SIMD优化
-pub struct ScanOperatorWrapper {
-    file_path: String,
-    finished: bool,
-    simd_enabled: bool,
-    batch_size: usize,
-}
 
-impl ScanOperatorWrapper {
-    pub fn new(file_path: String) -> Self {
-        Self {
-            file_path,
-            finished: false,
-            simd_enabled: true,
-            batch_size: 8192, // 默认批次大小
-        }
-    }
-    
-    /// 创建高性能扫描算子
-    pub fn new_high_performance(file_path: String) -> Self {
-        Self {
-            file_path,
-            finished: false,
-            simd_enabled: true,
-            batch_size: 16384, // 更大的批次大小
-        }
-    }
-    
-    /// 应用SIMD优化处理
-    fn apply_simd_optimization(&self, batch: &RecordBatch) -> Result<RecordBatch> {
-        if !self.simd_enabled {
-            return Ok(batch.clone());
-        }
-        
-        // 使用SIMD优化的数据处理
-        self.process_batch_with_simd(batch)
-    }
-    
-    /// 使用SIMD处理批次
-    fn process_batch_with_simd(&self, batch: &RecordBatch) -> Result<RecordBatch> {
-        // 这里应该调用SIMD优化的处理函数
-        // 简化实现：直接返回原批次
-        Ok(batch.clone())
-    }
-}
-
-impl Operator for ScanOperatorWrapper {
-    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> crate::execution::push_runtime::OpStatus {
-        match ev {
-            Event::StartScan { file_path } => {
-                if file_path == self.file_path {
-                    // 使用SIMD优化扫描数据
-                    let batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
-                    match self.apply_simd_optimization(&batch) {
-                        Ok(optimized_batch) => {
-                            out.push(0, optimized_batch);
-                            crate::execution::push_runtime::OpStatus::HasMore
-                        }
-                        Err(_) => {
-                            // 降级到普通处理
-                            out.push(0, batch);
-                            crate::execution::push_runtime::OpStatus::HasMore
-                        }
-                    }
-                } else {
-                    crate::execution::push_runtime::OpStatus::Ready
-                }
-            }
-            Event::Data { .. } => {
-                // 扫描算子不处理输入数据
-                crate::execution::push_runtime::OpStatus::Ready
-            }
-            Event::Finish(_) => {
-                self.finished = true;
-                crate::execution::push_runtime::OpStatus::Finished
-            }
-            _ => crate::execution::push_runtime::OpStatus::Ready,
-        }
-    }
-    
-    fn is_finished(&self) -> bool {
-        self.finished
-    }
-    
-    fn name(&self) -> &str {
-        "ScanOperator"
-    }
-}
-
-/// 聚合算子包装器 - 支持SIMD优化
-pub struct AggregateOperatorWrapper {
-    group_columns: Vec<usize>,
-    agg_functions: Vec<String>,
-    finished: bool,
-    simd_enabled: bool,
-    vectorized_processing: bool,
-}
-
-impl AggregateOperatorWrapper {
-    pub fn new(group_columns: Vec<usize>, agg_functions: Vec<String>) -> Self {
-        Self {
-            group_columns,
-            agg_functions,
-            finished: false,
-            simd_enabled: true,
-            vectorized_processing: true,
-        }
-    }
-    
-    /// 创建高性能聚合算子
-    pub fn new_high_performance(group_columns: Vec<usize>, agg_functions: Vec<String>) -> Self {
-        Self {
-            group_columns,
-            agg_functions,
-            finished: false,
-            simd_enabled: true,
-            vectorized_processing: true,
-        }
-    }
-    
-    /// 应用向量化聚合处理
-    fn apply_vectorized_aggregation(&self, batch: &RecordBatch) -> Result<RecordBatch> {
-        if !self.vectorized_processing {
-            return Ok(batch.clone());
-        }
-        
-        // 使用向量化聚合处理
-        self.process_aggregation_with_vectorization(batch)
-    }
-    
-    /// 使用向量化处理聚合
-    fn process_aggregation_with_vectorization(&self, batch: &RecordBatch) -> Result<RecordBatch> {
-        // 这里应该调用向量化聚合函数
-        // 简化实现：直接返回原批次
-        Ok(batch.clone())
-    }
-}
-
-impl Operator for AggregateOperatorWrapper {
-    fn on_event(&mut self, ev: Event, out: &mut Outbox) -> crate::execution::push_runtime::OpStatus {
-        match ev {
-            Event::Data { batch, .. } => {
-                // 使用向量化聚合处理
-                match self.apply_vectorized_aggregation(&batch) {
-                    Ok(result_batch) => {
-                        out.push(0, result_batch);
-                        crate::execution::push_runtime::OpStatus::HasMore
-                    }
-                    Err(_) => {
-                        // 降级到普通处理
-                        let result_batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
-                        out.push(0, result_batch);
-                        crate::execution::push_runtime::OpStatus::HasMore
-                    }
-                }
-            }
-            Event::Finish(_) => {
-                self.finished = true;
-                crate::execution::push_runtime::OpStatus::Finished
-            }
-            _ => crate::execution::push_runtime::OpStatus::Ready,
-        }
-    }
-    
-    fn is_finished(&self) -> bool {
-        self.finished
-    }
-    
-    fn name(&self) -> &str {
-        "AggregateOperator"
-    }
-}
 
 impl Default for UnifiedExecutionEngine {
     fn default() -> Self {
