@@ -23,8 +23,8 @@
 //! 3. Lake house data reading
 //! 4. Pipeline execution engine
 
-use crate::execution::mpp_engine::*;
 use crate::execution::vectorized_driver::*;
+use crate::execution::pipeline_executor::*;
 use crate::execution::pipeline::*;
 use crate::execution::task::*;
 use crate::execution::scheduler::push_scheduler::PushScheduler;
@@ -41,12 +41,10 @@ use uuid::Uuid;
 /// Integrated execution engine configuration
 #[derive(Debug, Clone)]
 pub struct IntegratedEngineConfig {
-    /// MPP execution engine configuration
-    pub mpp_config: MppExecutionConfig,
-    /// Vectorized driver configuration
-    pub vectorized_config: (),
-    /// Pipeline execution configuration
-    pub pipeline_config: PipelineConfig,
+    /// Unified execution engine configuration
+    pub unified_config: (),
+    /// Pipeline executor configuration
+    pub pipeline_config: (),
     /// Lake house reader configuration
     pub lake_config: UnifiedLakeReaderConfig,
 }
@@ -108,8 +106,8 @@ impl Default for LakeReaderConfig {
 /// Integrated execution engine
 pub struct IntegratedEngine {
     config: IntegratedEngineConfig,
-    mpp_engine: MppExecutionEngine,
-    vectorized_driver: Arc<VectorizedDriver>,
+    unified_engine: Arc<UnifiedExecutionEngine>,
+    pipeline_executor: Arc<tokio::sync::RwLock<Option<PipelineExecutor>>>,
     scheduler: Arc<PushScheduler>,
     lake_reader: UnifiedLakeReader,
     active_pipelines: Arc<tokio::sync::RwLock<HashMap<Uuid, Pipeline>>>,
@@ -135,11 +133,11 @@ impl IntegratedEngine {
     pub async fn new(config: IntegratedEngineConfig) -> Result<Self> {
         info!("Creating integrated execution engine");
 
-        // Create MPP execution engine
-        let mpp_engine = MppExecutionEngineFactory::create_engine(config.mpp_config.clone());
+        // Create unified execution engine
+        let unified_engine = Arc::new(UnifiedExecutionEngineFactory::create_high_performance_engine());
 
-        // Create vectorized driver
-        let vectorized_driver = Arc::new(VectorizedDriver::new());
+        // Create pipeline executor
+        let pipeline_executor = Arc::new(tokio::sync::RwLock::new(Some(PipelineExecutorFactory::create_high_performance_executor())));
 
         // Create scheduler
         let scheduler_config = crate::utils::config::SchedulerConfig::default();
@@ -148,13 +146,14 @@ impl IntegratedEngine {
         // Create lake house reader
         let lake_reader = UnifiedLakeReader::new(config.lake_config.clone());
 
-        // Set vectorized driver in scheduler
-        scheduler.set_vectorized_driver(vectorized_driver.clone()).await?;
+        // Set unified engine in scheduler
+        scheduler.set_unified_execution_engine(unified_engine.clone()).await?;
+        scheduler.set_pipeline_executor(pipeline_executor.clone()).await?;
 
         Ok(Self {
             config,
-            mpp_engine,
-            vectorized_driver,
+            unified_engine,
+            pipeline_executor,
             scheduler,
             lake_reader,
             active_pipelines: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
@@ -520,12 +519,8 @@ impl IntegratedEngineFactory {
     /// Create a default integrated execution engine
     pub async fn create_default() -> Result<IntegratedEngine> {
         let config = IntegratedEngineConfig {
-            mpp_config: MppExecutionEngineFactory::create_default_config(
-                "worker-1".to_string(),
-                vec!["worker-1".to_string(), "worker-2".to_string(), "worker-3".to_string()],
-            ),
-            vectorized_config: (),
-            pipeline_config: PipelineConfig::default(),
+            unified_config: (),
+            pipeline_config: (),
             lake_config: UnifiedLakeReaderConfig::default(),
         };
         

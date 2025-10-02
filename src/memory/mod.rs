@@ -21,3 +21,4 @@
 //! 包含内存分配器、内存池、内存统计等功能
 
 pub mod allocator;
+pub mod memory_pool;

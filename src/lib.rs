@@ -34,6 +34,7 @@ pub mod expression;
 pub mod performance;
 
 // Re-export commonly used types
-pub use execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
+pub use execution::vectorized_driver::{UnifiedExecutionEngine, UnifiedExecutionEngineFactory, VectorizedDriver};
+pub use execution::pipeline_executor::{PipelineExecutor, PipelineExecutorFactory};
 pub use execution::integrated_engine::{IntegratedEngine, IntegratedEngineFactory, IntegratedEngineConfig, StageExecutionPlan};
 pub use utils::config::Config;

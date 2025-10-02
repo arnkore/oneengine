@@ -216,7 +216,7 @@ impl<'a> Outbox<'a> {
     /// 获取可用信用
     pub fn get_available_credit(&self, to: PortId) -> u32 {
         if let Some(ref credit_manager) = self.credit_manager {
-            credit_manager.credits.get(&to).copied().unwrap_or(0)
+            credit_manager.credits.get(&to).map(|c| c.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(0)
         } else {
             u32::MAX // 没有信用管理器时返回最大信用
         }

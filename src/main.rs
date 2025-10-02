@@ -16,7 +16,8 @@
  */
 
 
-use oneengine::execution::mpp_engine::{MppExecutionEngine, MppExecutionEngineFactory, MppExecutionConfig};
+use oneengine::execution::vectorized_driver::{UnifiedExecutionEngine, UnifiedExecutionEngineFactory};
+use oneengine::execution::pipeline_executor::{PipelineExecutor, PipelineExecutorFactory};
 use oneengine::utils::config::Config;
 use tracing::{info, error};
 
@@ -27,24 +28,22 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    info!("Starting MPP Execution Engine - Distributed Query Processing");
+    info!("Starting Unified Execution Engine - High Performance Query Processing");
 
     // Load configuration
     let config = Config::load()?;
     info!("Configuration loaded: {:?}", config);
 
-    // Create MPP execution engine configuration
-    let mpp_config = MppExecutionEngineFactory::create_default_config(
-        "worker-1".to_string(),
-        vec!["worker-1".to_string(), "worker-2".to_string(), "worker-3".to_string()],
-    );
+    // Create unified execution engine
+    let engine = UnifiedExecutionEngineFactory::create_high_performance();
+    info!("Unified Execution Engine created successfully");
     
-    // Create and start the MPP engine
-    let mut engine = MppExecutionEngineFactory::create_engine(mpp_config);
-    info!("MPP Execution Engine created successfully");
+    // Create pipeline executor
+    let pipeline_executor = PipelineExecutorFactory::create_high_performance();
+    info!("Pipeline Executor created successfully");
     
-    // For now, just demonstrate the engine is ready
-    info!("MPP Execution Engine is ready for distributed query processing");
+    // For now, just demonstrate the engines are ready
+    info!("Unified Execution Engine and Pipeline Executor are ready for high-performance query processing");
 
     Ok(())
 }

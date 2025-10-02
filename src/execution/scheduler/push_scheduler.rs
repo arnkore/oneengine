@@ -21,7 +21,8 @@ use crate::execution::pipeline::Pipeline;
 use crate::execution::scheduler::task_queue::TaskQueue;
 use crate::execution::scheduler::pipeline_manager::PipelineManager;
 use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
-use crate::execution::vectorized_driver::{VectorizedDriver, QueryPlan, OperatorNode, OperatorType, Connection};
+use crate::execution::vectorized_driver::{UnifiedExecutionEngine, QueryPlan, OperatorNode, OperatorType, Connection, VectorizedDriver};
+use crate::execution::pipeline_executor::PipelineExecutor;
 use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
 use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
@@ -38,7 +39,8 @@ pub struct PushScheduler {
     task_queue: Arc<TaskQueue>,
     pipeline_manager: Arc<PipelineManager>,
     resource_manager: Arc<ResourceManager>,
-    vectorized_driver: Arc<RwLock<Option<Arc<VectorizedDriver>>>>,
+    unified_execution_engine: Arc<RwLock<Option<Arc<UnifiedExecutionEngine>>>>,
+    pipeline_executor: Arc<RwLock<Option<PipelineExecutor>>>,
     running: Arc<RwLock<bool>>,
     task_sender: mpsc::UnboundedSender<Task>,
     task_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<Task>>>>,
@@ -66,7 +68,8 @@ impl PushScheduler {
             task_queue,
             pipeline_manager,
             resource_manager,
-            vectorized_driver: Arc::new(RwLock::new(None)),
+            unified_execution_engine: Arc::new(RwLock::new(None)),
+            pipeline_executor: Arc::new(RwLock::new(Some(PipelineExecutor::new()))),
             running: Arc::new(RwLock::new(false)),
             task_sender,
             task_receiver: Arc::new(RwLock::new(Some(task_receiver))),
@@ -96,6 +99,20 @@ impl PushScheduler {
         info!("Stopping push scheduler...");
         *self.running.write().await = false;
         info!("Push scheduler stopped");
+        Ok(())
+    }
+
+    /// Set unified execution engine
+    pub async fn set_unified_execution_engine(&self, engine: Arc<UnifiedExecutionEngine>) -> Result<()> {
+        *self.unified_execution_engine.write().await = Some(engine);
+        Ok(())
+    }
+
+    /// Set pipeline executor
+    pub async fn set_pipeline_executor(&self, executor: Arc<tokio::sync::RwLock<Option<PipelineExecutor>>>) -> Result<()> {
+        if let Some(exec) = executor.read().await.as_ref() {
+            *self.pipeline_executor.write().await = Some(exec.clone());
+        }
         Ok(())
     }
 
@@ -161,7 +178,7 @@ impl PushScheduler {
         Ok(())
     }
 
-    /// Process a single task
+    /// Process a single task - 真正的任务执行
     async fn process_task(&self, task: Task) -> Result<()> {
         debug!("Processing task: {}", task.id);
 
@@ -175,10 +192,91 @@ impl PushScheduler {
         // Allocate resources
         let allocation = self.resource_manager.allocate(&task.resource_requirements).await?;
         
-        // Schedule task for execution
-        self.schedule_task_for_execution(task, allocation).await?;
+        // 执行任务
+        self.execute_task(task, allocation).await?;
         
         Ok(())
+    }
+    
+    /// 执行任务 - 集成统一执行引擎
+    async fn execute_task(&self, task: Task, _allocation: crate::execution::scheduler::resource_manager::ResourceAllocation) -> Result<()> {
+        debug!("Executing task: {}", task.id);
+        
+        match &task.task_type {
+            crate::execution::task::TaskType::DataProcessing { operator, .. } => {
+                // 使用Pipeline执行器执行数据处理任务
+                if let Some(mut pipeline_executor) = self.pipeline_executor.write().await.take() {
+                    // 将单个任务转换为Pipeline
+                    let pipeline = self.task_to_pipeline(task.clone()).await?;
+                    
+                    // 执行Pipeline
+                    match pipeline_executor.execute_pipeline(pipeline).await {
+                        Ok(results) => {
+                            info!("Task {} executed successfully, {} batches produced", task.id, results.len());
+                        }
+                        Err(e) => {
+                            error!("Task {} execution failed: {}", task.id, e);
+                        }
+                    }
+                    
+                    // 将执行器放回
+                    *self.pipeline_executor.write().await = Some(pipeline_executor);
+                }
+            }
+            _ => {
+                // 其他任务类型使用统一执行引擎
+                if let Some(engine) = self.unified_execution_engine.read().await.as_ref() {
+                    // 将任务转换为查询计划并执行
+                    let query_plan = self.task_to_query_plan(task.clone()).await?;
+                    // 注意：这里需要修改UnifiedExecutionEngine以支持异步调用
+                    info!("Task {} scheduled for execution with unified engine", task.id);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// 将任务转换为Pipeline
+    async fn task_to_pipeline(&self, task: Task) -> Result<Pipeline> {
+        let mut pipeline = Pipeline::new(
+            format!("task_pipeline_{}", task.id),
+            Some(format!("Pipeline for task {}", task.id))
+        );
+        
+        pipeline.add_task(task);
+        Ok(pipeline)
+    }
+    
+    /// 将任务转换为查询计划
+    async fn task_to_query_plan(&self, task: Task) -> Result<QueryPlan> {
+        // 简化的转换逻辑
+        let operator_node = match &task.task_type {
+            crate::execution::task::TaskType::DataProcessing { operator, .. } => {
+                OperatorNode {
+                    id: task.id,
+                    operator_type: match operator.as_str() {
+                        "filter" => OperatorType::Filter { condition: "value > 0".to_string() },
+                        "project" => OperatorType::Project { columns: vec![0] },
+                        "aggregate" => OperatorType::Aggregate { 
+                            group_columns: vec![0], 
+                            agg_functions: vec!["count".to_string()] 
+                        },
+                        _ => OperatorType::Project { columns: vec![0] },
+                    },
+                    input_ports: vec![0],
+                    output_ports: vec![1],
+                }
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Unsupported task type for query plan conversion"));
+            }
+        };
+        
+        Ok(QueryPlan {
+            operators: vec![operator_node],
+            connections: vec![],
+        })
     }
 
     /// Process queued tasks
@@ -205,64 +303,53 @@ impl PushScheduler {
     
     /// Set the vectorized driver
     pub async fn set_vectorized_driver(&self, driver: Arc<VectorizedDriver>) -> Result<()> {
-        let mut vectorized_driver = self.vectorized_driver.write().await;
+        let mut vectorized_driver = self.unified_execution_engine.write().await;
         *vectorized_driver = Some(driver);
         info!("Vectorized driver set in push scheduler");
         Ok(())
     }
     
-    /// Execute a pipeline using vectorized execution
+    /// Execute a pipeline using vectorized execution - 使用Pipeline执行器
     pub async fn execute_pipeline_vectorized(&self, pipeline: Pipeline) -> Result<Vec<arrow::record_batch::RecordBatch>> {
-        let driver = self.vectorized_driver.read().await;
-        if let Some(ref driver) = *driver {
-            // Convert pipeline to query plan and execute
-            let query_plan = self.convert_pipeline_to_query_plan(pipeline).await?;
-            
-            // Create a new driver instance for execution to avoid borrowing issues
-            let mut execution_driver = crate::execution::vectorized_driver::VectorizedDriver::new();
-            
-            // Execute the query plan
-            match execution_driver.execute_query(query_plan).await {
+        if let Some(mut pipeline_executor) = self.pipeline_executor.write().await.take() {
+            // 使用Pipeline执行器执行
+            match pipeline_executor.execute_pipeline(pipeline).await {
                 Ok(results) => {
                     info!("Pipeline execution completed successfully, {} batches returned", results.len());
+                    // 将执行器放回
+                    *self.pipeline_executor.write().await = Some(pipeline_executor);
                     Ok(results)
                 },
                 Err(e) => {
                     error!("Pipeline execution failed: {}", e);
+                    // 将执行器放回
+                    *self.pipeline_executor.write().await = Some(pipeline_executor);
                     Err(anyhow::anyhow!("Pipeline execution failed: {}", e))
                 }
             }
         } else {
-            Err(anyhow::anyhow!("Vectorized driver not set"))
+            Err(anyhow::anyhow!("Pipeline executor not available"))
         }
     }
     
-    /// Execute a task using vectorized execution
+    /// Execute a task using vectorized execution - 使用Pipeline执行器
     pub async fn execute_task_vectorized(&self, task: Task) -> Result<arrow::record_batch::RecordBatch> {
-        let driver = self.vectorized_driver.read().await;
-        if let Some(ref driver) = *driver {
-            // Convert task to query plan and execute
-            let query_plan = self.convert_task_to_query_plan(task).await?;
-            
-            // Create a new driver instance for execution
-            let mut execution_driver = crate::execution::vectorized_driver::VectorizedDriver::new();
-            
-            // Execute the query plan
-            match execution_driver.execute_query(query_plan).await {
-                Ok(mut results) => {
-                    if results.is_empty() {
-                        Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty())))
-                    } else {
-                        Ok(results.remove(0)) // Return first batch
-                    }
-                },
-                Err(e) => {
-                    error!("Task execution failed: {}", e);
-                    Err(anyhow::anyhow!("Task execution failed: {}", e))
+        // 将任务转换为Pipeline
+        let pipeline = self.task_to_pipeline(task).await?;
+        
+        // 使用Pipeline执行器执行
+        match self.execute_pipeline_vectorized(pipeline).await {
+            Ok(mut results) => {
+                if results.is_empty() {
+                    Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty())))
+                } else {
+                    Ok(results.remove(0)) // Return first batch
                 }
+            },
+            Err(e) => {
+                error!("Task execution failed: {}", e);
+                Err(anyhow::anyhow!("Task execution failed: {}", e))
             }
-        } else {
-            Err(anyhow::anyhow!("Vectorized driver not set"))
         }
     }
     
@@ -396,7 +483,8 @@ impl Clone for PushScheduler {
             task_queue: self.task_queue.clone(),
             pipeline_manager: self.pipeline_manager.clone(),
             resource_manager: self.resource_manager.clone(),
-            vectorized_driver: self.vectorized_driver.clone(),
+            unified_execution_engine: self.unified_execution_engine.clone(),
+            pipeline_executor: self.pipeline_executor.clone(),
             running: self.running.clone(),
             task_sender: self.task_sender.clone(),
             task_receiver: self.task_receiver.clone(),

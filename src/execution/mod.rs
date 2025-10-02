@@ -27,7 +27,7 @@ pub mod executor;
 pub mod performance_monitor;
 pub mod worker;
 pub mod vectorized_driver;
+pub mod pipeline_executor;
 pub mod pipeline;
 pub mod task;
-pub mod mpp_engine;
 pub mod integrated_engine;
