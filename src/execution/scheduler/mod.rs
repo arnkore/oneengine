@@ -20,3 +20,11 @@ pub mod push_scheduler;
 pub mod task_queue;
 pub mod pipeline_manager;
 pub mod resource_manager;
+pub mod work_stealing_scheduler;
+
+// 重新导出模块中的类型
+pub use push_scheduler::PushScheduler;
+pub use pipeline_manager::PipelineManager;
+pub use resource_manager::ResourceManager;
+pub use task_queue::TaskQueue;
+pub use work_stealing_scheduler::{WorkStealingScheduler, WorkStealingStats};

@@ -159,6 +159,8 @@ struct AllocationInfo {
     timestamp: Instant,
     /// 是否来自内存池
     from_pool: bool,
+    /// 分配的内存指针
+    ptr: *mut u8,
 }
 
 impl UnifiedMemoryManager {
@@ -209,6 +211,7 @@ impl UnifiedMemoryManager {
             priority: request.priority.clone(),
             timestamp: Instant::now(),
             from_pool,
+            ptr,
         };
 
         {
@@ -236,12 +239,13 @@ impl UnifiedMemoryManager {
         };
 
         if let Some(info) = allocation_info {
-            // 直接释放（简化实现）
-            unsafe {
-                std::alloc::dealloc(
-                    std::ptr::null_mut(), // 简化实现，实际应该存储指针
-                    std::alloc::Layout::from_size_align(info.size, 8).unwrap(),
-                );
+            // 安全释放内存
+            if !info.ptr.is_null() {
+                unsafe {
+                    let layout = std::alloc::Layout::from_size_align(info.size, 8)
+                        .map_err(|e| anyhow::anyhow!("Invalid layout for deallocation: {}", e))?;
+                    std::alloc::dealloc(info.ptr, layout);
+                }
             }
 
             // 更新统计信息
@@ -383,6 +387,14 @@ impl UnifiedMemoryManager {
         }
 
         Ok((ptr, size, false))
+    }
+    
+    /// 尝试内存池分配
+    fn try_pool_allocation(&self, size: usize, alignment: usize) -> Option<*mut u8> {
+        // 尝试从内存池分配
+        // 这里应该调用MemoryPool的分配方法
+        // 简化实现：返回None，回退到系统分配
+        None
     }
     
     /// 尝试中等对象分配器

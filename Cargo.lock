@@ -2988,6 +2988,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap",
  "datafusion-common",
+ "fastrand",
  "flate2",
  "futures",
  "hashbrown 0.14.5",

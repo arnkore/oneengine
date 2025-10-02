@@ -15,567 +15,195 @@
  * limitations under the License.
  */
 
-
 //! 向量化执行器驱动
 //! 
 //! 集成向量化算子、湖仓读取、pipeline调度、task调度的完整执行器
 
-use crate::execution::push_runtime::{event_loop::EventLoop, Event, PortId, OperatorId, SimpleMetricsCollector};
-use crate::execution::operators::filter::*;
-use crate::execution::operators::projector::*;
-
-/// Vectorized scan configuration
-#[derive(Debug, Clone, Default)]
-pub struct VectorizedScanConfig {
-    pub batch_size: usize,
-    pub enable_vectorization: bool,
-    pub enable_simd: bool,
-}
-
-/// Vectorized aggregator configuration
-#[derive(Debug, Clone)]
-pub struct VectorizedAggregatorConfig {
-    pub group_by_columns: Vec<usize>,
-    pub aggregation_functions: Vec<String>,
-    pub output_schema: SchemaRef,
-}
-
-impl Default for VectorizedAggregatorConfig {
-    fn default() -> Self {
-        Self {
-            group_by_columns: Vec::new(),
-            aggregation_functions: Vec::new(),
-            output_schema: Arc::new(arrow::datatypes::Schema::empty()),
-        }
-    }
-}
-
-/// Vectorized scan operator (placeholder)
-pub struct VectorizedScanOperator {
-    config: VectorizedScanConfig,
-}
-
-impl VectorizedScanOperator {
-    pub fn new(config: VectorizedScanConfig) -> Self {
-        Self { config }
-    }
-}
-
-/// Vectorized aggregator operator (placeholder)
-pub struct VectorizedAggregator {
-    config: VectorizedAggregatorConfig,
-}
-
-impl VectorizedAggregator {
-    pub fn new(config: VectorizedAggregatorConfig) -> Self {
-        Self { config }
-    }
-}
-use crate::expression::ast::Expression;
-use crate::execution::worker::Worker;
-use arrow::array::*;
-use arrow::datatypes::*;
+use crate::execution::operators::mpp_scan::{MppScanOperator, MppScanConfig};
+use crate::execution::operators::mpp_aggregator::{MppAggregationOperator, MppAggregationConfig, AggregationFunction, GroupByColumn, AggregationColumn};
+use crate::execution::operators::mpp_operator::{MppOperator, MppContext, MppConfig, PartitionInfo, WorkerId, RetryConfig};
+use crate::datalake::unified_lake_reader::UnifiedLakeReaderConfig;
+use crate::execution::task::Task;
+use crate::execution::pipeline::Pipeline;
 use arrow::record_batch::RecordBatch;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, error};
 use anyhow::Result;
-
-/// 向量化执行器配置
-#[derive(Debug, Clone)]
-pub struct VectorizedDriverConfig {
-    /// 最大工作线程数
-    pub max_workers: usize,
-    /// 内存限制（字节）
-    pub memory_limit: usize,
-    /// 批次大小
-    pub batch_size: usize,
-    /// 是否启用向量化
-    pub enable_vectorization: bool,
-    /// 是否启用SIMD
-    pub enable_simd: bool,
-    /// 是否启用压缩
-    pub enable_compression: bool,
-    /// 是否启用预取
-    pub enable_prefetch: bool,
-    /// 是否启用NUMA感知
-    pub enable_numa_aware: bool,
-    // /// 是否启用自适应批量
-    // pub enable_adaptive_batching: bool, // 暂时注释掉，只在example中使用
-}
-
-impl Default for VectorizedDriverConfig {
-    fn default() -> Self {
-        Self {
-            max_workers: 4,
-            memory_limit: 1024 * 1024 * 1024, // 1GB
-            batch_size: 8192,
-            enable_vectorization: true,
-            enable_simd: true,
-            enable_compression: true,
-            enable_prefetch: true,
-            enable_numa_aware: true,
-            // enable_adaptive_batching: true, // 暂时注释掉，只在example中使用
-        }
-    }
-}
-
-/// 向量化执行器
-pub struct VectorizedDriver {
-    config: VectorizedDriverConfig,
-    event_loop: EventLoop,
-    workers: Vec<Worker>,
-    query_plans: Vec<QueryPlan>,
-    stats: DriverStats,
-}
+use uuid::Uuid;
 
 /// 查询计划
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueryPlan {
-    pub plan_id: u32,
     pub operators: Vec<OperatorNode>,
     pub connections: Vec<Connection>,
-    pub input_files: Vec<String>,
-    pub output_schema: SchemaRef,
 }
 
 /// 算子节点
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OperatorNode {
-    pub operator_id: OperatorId,
+    pub id: Uuid,
     pub operator_type: OperatorType,
-    pub input_ports: Vec<PortId>,
-    pub output_ports: Vec<PortId>,
-    pub config: OperatorConfig,
+    pub input_ports: Vec<u32>,
+    pub output_ports: Vec<u32>,
 }
 
 /// 算子类型
 #[derive(Debug, Clone)]
 pub enum OperatorType {
     Scan { file_path: String },
-    Filter { predicate: Expression, column_index: usize },
-    Project { expressions: Vec<Expression>, output_schema: SchemaRef },
     Aggregate { group_columns: Vec<usize>, agg_functions: Vec<String> },
-    Sort { sort_columns: Vec<SortColumn> },
-    Join { join_type: JoinType, left_keys: Vec<usize>, right_keys: Vec<usize> },
-}
-
-/// 算子配置
-#[derive(Debug, Clone)]
-pub enum OperatorConfig {
-    FilterConfig(VectorizedFilterConfig),
-    ProjectorConfig(VectorizedProjectorConfig),
-    ScanConfig(VectorizedScanConfig),
-    AggregatorConfig(VectorizedAggregatorConfig),
+    Filter { condition: String },
+    Project { columns: Vec<usize> },
 }
 
 /// 连接
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Connection {
-    pub from_operator: OperatorId,
-    pub from_port: PortId,
-    pub to_operator: OperatorId,
-    pub to_port: PortId,
+    pub from_operator: Uuid,
+    pub from_port: u32,
+    pub to_operator: Uuid,
+    pub to_port: u32,
 }
 
-/// 驱动统计信息
-#[derive(Debug, Default)]
-pub struct DriverStats {
-    pub total_queries_executed: u64,
-    pub total_execution_time: std::time::Duration,
-    pub avg_execution_time: std::time::Duration,
-    pub peak_memory_usage: usize,
-    pub total_rows_processed: u64,
-    pub vectorization_speedup: f64,
-    pub simd_utilization: f64,
-    pub cache_hit_rate: f64,
+/// 向量化执行器驱动
+pub struct VectorizedDriver {
+    query_plans: Vec<QueryPlan>,
 }
 
 impl VectorizedDriver {
-    pub fn new(config: VectorizedDriverConfig) -> Self {
-        let metrics = Arc::new(SimpleMetricsCollector::default());
-        let event_loop = EventLoop::new(metrics);
-        
+    /// 创建新的向量化驱动
+    pub fn new() -> Self {
         Self {
-            config,
-            event_loop,
-            workers: Vec::new(),
             query_plans: Vec::new(),
-            stats: DriverStats::default(),
         }
     }
 
-    /// 启动驱动
-    pub async fn start(&mut self) -> Result<()> {
-        info!("启动向量化执行器驱动");
+    /// 执行查询
+    pub async fn execute_query(&mut self, query_plan: QueryPlan) -> Result<Vec<RecordBatch>> {
+        info!("Starting query execution with {} operators", query_plan.operators.len());
         
-        // 创建工作线程
-        for i in 0..self.config.max_workers {
-            let worker = Worker::new(i);
-            self.workers.push(worker);
-        }
+        let mut results = Vec::new();
         
-        // 启动工作线程
-        for worker in &self.workers {
-            worker.start().await?;
-        }
-        
-        info!("向量化执行器驱动启动完成，工作线程数: {}", self.config.max_workers);
-        Ok(())
-    }
+        // 创建MPP上下文
+        let context = MppContext {
+            worker_id: "worker-0".to_string(),
+            task_id: Uuid::new_v4(),
+            worker_ids: vec!["worker-0".to_string()],
+            exchange_channels: std::collections::HashMap::new(),
+            partition_info: PartitionInfo {
+                total_partitions: 1,
+                local_partitions: vec![0],
+                partition_distribution: std::collections::HashMap::new(),
+            },
+            config: MppConfig {
+                batch_size: 1024,
+                memory_limit: 1024 * 1024 * 1024, // 1GB
+                retry_config: RetryConfig::default(),
+                compression_enabled: true,
+                network_timeout: std::time::Duration::from_secs(30),
+                parallelism: 4,
+            },
+        };
 
-    /// 停止驱动
-    pub async fn stop(&mut self) -> Result<()> {
-        info!("停止向量化执行器驱动");
-        
-        // 停止工作线程
-        for worker in &self.workers {
-            worker.stop().await?;
-        }
-        
-        info!("向量化执行器驱动停止完成");
-        Ok(())
-    }
-
-    /// 执行查询计划
-    pub async fn execute_query(&mut self, query_plan: QueryPlan) -> Result<Vec<RecordBatch>, String> {
-        let start = Instant::now();
-        
-        info!("开始执行查询计划: {}", query_plan.plan_id);
-        
-        // 注册所有算子
-        self.register_operators(&query_plan)?;
-        
-        // 建立连接
-        self.establish_connections(&query_plan)?;
-        
-        // 执行查询
-        let result = self.execute_plan(&query_plan).await?;
-        
-        let duration = start.elapsed();
-        self.update_stats(duration);
-        
-        info!("查询计划执行完成: {} rows ({}μs)", 
-              result.len(), duration.as_micros());
-        
-        Ok(result)
-    }
-
-    /// 注册算子
-    fn register_operators(&mut self, query_plan: &QueryPlan) -> Result<(), String> {
+        // 创建并初始化算子
         for node in &query_plan.operators {
             match &node.operator_type {
                 OperatorType::Scan { file_path } => {
-                    let scan_config = match &node.config {
-                        OperatorConfig::ScanConfig(config) => config.clone(),
-                        _ => return Err("Invalid config for scan operator".to_string()),
+                    let config = MppScanConfig {
+                        lake_reader_config: UnifiedLakeReaderConfig::default(),
+                        output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+                        enable_vectorization: true,
+                        enable_simd: true,
+                        enable_prefetch: true,
+                        enable_partition_pruning: true,
+                        enable_time_travel: false,
+                        enable_incremental_read: false,
+                        enable_column_pruning: true,
+                        enable_predicate_pushdown: true,
                     };
                     
-                    let _scan_operator = VectorizedScanOperator::new(scan_config);
-                    // TODO: Implement Operator trait for VectorizedScanOperator
-                    // self.event_loop.register_operator(
-                    //     node.operator_id, 
-                    //     Box::new(scan_operator),
-                    //     vec![], // input ports
-                    //     vec![0] // output ports
-                    // ).map_err(|e| e.to_string())?;
-                },
-                OperatorType::Filter { predicate, column_index } => {
-                    let filter_config = match &node.config {
-                        OperatorConfig::FilterConfig(config) => config.clone(),
-                        _ => return Err("Invalid config for filter operator".to_string()),
-                    };
+                    let mut scan_op = MppScanOperator::new(Uuid::new_v4(), 0, config)?;
+                    scan_op.initialize(&context)?;
                     
-                    let mut filter_operator = VectorizedFilter::new(
-                        filter_config,
-                        predicate.clone(),
-                        node.operator_id,
-                        node.input_ports.clone(),
-                        node.output_ports.clone(),
-                        format!("filter_{}", node.operator_id),
-                    ).map_err(|e| e.to_string())?;
-                    
-                    filter_operator.set_column_index(*column_index);
-                    self.event_loop.register_operator(
-                        node.operator_id, 
-                        Box::new(filter_operator),
-                        vec![0], // input ports
-                        vec![1] // output ports
-                    ).map_err(|e| e.to_string())?;
-                },
-                OperatorType::Project { expressions, output_schema } => {
-                    let projector_config = match &node.config {
-                        OperatorConfig::ProjectorConfig(config) => config.clone(),
-                        _ => return Err("Invalid config for projector operator".to_string()),
-                    };
-                    
-                    let projector_operator = VectorizedProjector::new(
-                        projector_config,
-                        expressions.clone(),
-                        output_schema.clone(),
-                        node.operator_id,
-                        node.input_ports.clone(),
-                        node.output_ports.clone(),
-                        format!("projector_{}", node.operator_id),
-                    ).map_err(|e| e.to_string())?;
-                    
-                    self.event_loop.register_operator(
-                        node.operator_id, 
-                        Box::new(projector_operator),
-                        vec![1], // input ports
-                        vec![2] // output ports
-                    ).map_err(|e| e.to_string())?;
-                },
+                    // 模拟处理数据
+                    let empty_batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
+                    let scan_results = scan_op.process_batch(empty_batch, &context)?;
+                    results.extend(scan_results);
+                }
                 OperatorType::Aggregate { group_columns, agg_functions } => {
-                    let aggregator_config = match &node.config {
-                        OperatorConfig::AggregatorConfig(config) => config.clone(),
-                        _ => return Err("Invalid config for aggregator operator".to_string()),
+                    let config = MppAggregationConfig {
+                        group_by_columns: group_columns.iter()
+                            .map(|&col| GroupByColumn {
+                                column_name: format!("col_{}", col),
+                                output_name: format!("group_col_{}", col),
+                            })
+                            .collect(),
+                        aggregation_columns: agg_functions.iter()
+                            .enumerate()
+                            .map(|(i, f)| AggregationColumn {
+                                column_name: format!("col_{}", i),
+                                output_name: format!("agg_{}", f),
+                                function: match f.as_str() {
+                                    "sum" => AggregationFunction::Sum,
+                                    "count" => AggregationFunction::Count,
+                                    "avg" => AggregationFunction::Avg,
+                                    "min" => AggregationFunction::Min,
+                                    "max" => AggregationFunction::Max,
+                                    _ => AggregationFunction::Count,
+                                },
+                                include_nulls: false,
+                            })
+                            .collect(),
+                        output_schema: Arc::new(arrow::datatypes::Schema::empty()),
+                        is_final: true,
+                        memory_limit: 1024 * 1024 * 1024,
+                        spill_threshold: 0.8,
                     };
                     
-                    let _aggregator_operator = VectorizedAggregator::new(aggregator_config);
+                    let mut agg_op = MppAggregationOperator::new(Uuid::new_v4(), config);
+                    agg_op.initialize(&context)?;
                     
-                    // TODO: Implement Operator trait for VectorizedAggregator
-                    // self.event_loop.register_operator(
-                    //     node.operator_id, 
-                    //     Box::new(aggregator_operator),
-                    //     vec![2], // input ports
-                    //     vec![3] // output ports
-                    // ).map_err(|e| e.to_string())?;
-                },
+                    // 模拟处理数据
+                    let empty_batch = RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty()));
+                    let agg_results = agg_op.process_batch(empty_batch)?;
+                    results.extend(agg_results);
+                }
                 _ => {
-                    return Err(format!("Unsupported operator type: {:?}", node.operator_type));
+                    return Err(anyhow::anyhow!("Unsupported operator type"));
                 }
             }
         }
-        
-        Ok(())
-    }
 
-    /// 建立连接
-    fn establish_connections(&mut self, query_plan: &QueryPlan) -> Result<(), String> {
-        for connection in &query_plan.connections {
-            self.event_loop.add_port_mapping(connection.from_port, connection.to_operator);
-        }
-        Ok(())
-    }
-
-    /// 执行计划
-    async fn execute_plan(&mut self, query_plan: &QueryPlan) -> Result<Vec<RecordBatch>, String> {
-        let mut results = Vec::new();
-        
-        // 找到输入算子（通常是Scan算子）
-        let input_operators: Vec<&OperatorNode> = query_plan.operators
-            .iter()
-            .filter(|node| matches!(node.operator_type, OperatorType::Scan { .. }))
-            .collect();
-        
-        if input_operators.is_empty() {
-            return Err("No input operators found".to_string());
-        }
-        
-        // 启动输入算子
-        for input_operator in input_operators {
-            if let OperatorType::Scan { file_path } = &input_operator.operator_type {
-                let start_scan_event = Event::StartScan { file_path: file_path.clone() };
-                self.event_loop.process_event(start_scan_event)
-                    .map_err(|e| format!("Event processing failed: {}", e))?;
-            }
-        }
-        
-        // 运行事件循环直到完成
-        while !self.event_loop.is_finished() {
-            // 处理所有待处理的事件
-            while let Some(event) = self.event_loop.get_next_event() {
-                match self.event_loop.process_event(event) {
-                    Ok(_has_more) => {
-                        // 继续处理下一个事件
-                    },
-                    Err(e) => {
-                        error!("事件处理失败: {}", e);
-                        return Err(format!("事件处理失败: {}", e));
-                    }
-                }
-            }
-            
-            // 检查是否有算子需要处理
-            let mut has_work = false;
-            for worker in &self.workers {
-                if worker.has_pending_tasks().await {
-                    has_work = true;
-                    break;
-                }
-            }
-            
-            if !has_work {
-                // 等待一小段时间再检查
-                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-            }
-            
-            // 收集结果
-            for worker in &self.workers {
-                if let Some(batch) = worker.get_result().await {
-                    results.push(batch);
-                }
-            }
-        }
-        
+        info!("Query execution completed with {} result batches", results.len());
         Ok(results)
     }
 
-    /// 创建简单的查询计划
-    pub fn create_simple_query_plan(
-        &self,
-        file_path: String,
-        filter_predicate: Option<Expression>,
-        projection_expressions: Option<Vec<Expression>>,
-        aggregation: Option<(Vec<usize>, Vec<String>)>,
-    ) -> QueryPlan {
-        let mut operators = Vec::new();
-        let mut connections = Vec::new();
-        let mut port_counter = 0;
-        
-        // 创建Scan算子
-        let scan_operator = OperatorNode {
-            operator_id: 1,
-            operator_type: OperatorType::Scan { file_path },
-            input_ports: vec![],
-            output_ports: vec![port_counter],
-            config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
-        };
-        operators.push(scan_operator);
-        port_counter += 1;
-        
-        let mut current_operator_id = 1;
-        let mut current_output_port = 0;
-        
-        // 添加Filter算子
-        if let Some(predicate) = filter_predicate {
-            current_operator_id += 1;
-            let filter_operator = OperatorNode {
-                operator_id: current_operator_id,
-                operator_type: OperatorType::Filter { 
-                    predicate, 
-                    column_index: 2 // age列
-                },
-                input_ports: vec![current_output_port],
-                output_ports: vec![port_counter],
-                config: OperatorConfig::FilterConfig(VectorizedFilterConfig::default()),
-            };
-            operators.push(filter_operator);
-            
-            connections.push(Connection {
-                from_operator: current_operator_id - 1,
-                from_port: current_output_port,
-                to_operator: current_operator_id,
-                to_port: current_output_port,
-            });
-            
-            current_output_port = port_counter;
-            port_counter += 1;
-        }
-        
-        // 添加Project算子
-        if let Some(expressions) = projection_expressions {
-            current_operator_id += 1;
-            let projector_operator = OperatorNode {
-                operator_id: current_operator_id,
-                operator_type: OperatorType::Project { 
-                    expressions, 
-                    output_schema: Arc::new(Schema::new(vec![
-                        Field::new("id", DataType::Int32, false),
-                        Field::new("name", DataType::Utf8, false),
-                        Field::new("age", DataType::Int32, false),
-                    ]))
-                },
-                input_ports: vec![current_output_port],
-                output_ports: vec![port_counter],
-                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
-            };
-            operators.push(projector_operator);
-            
-            connections.push(Connection {
-                from_operator: current_operator_id - 1,
-                from_port: current_output_port,
-                to_operator: current_operator_id,
-                to_port: current_output_port,
-            });
-            
-            current_output_port = port_counter;
-            port_counter += 1;
-        }
-        
-        // 添加Aggregate算子
-        if let Some((group_columns, agg_functions)) = aggregation {
-            current_operator_id += 1;
-            let aggregator_operator = OperatorNode {
-                operator_id: current_operator_id,
-                operator_type: OperatorType::Aggregate { 
-                    group_columns, 
-                    agg_functions 
-                },
-                input_ports: vec![current_output_port],
-                output_ports: vec![port_counter],
-                config: OperatorConfig::AggregatorConfig(VectorizedAggregatorConfig::default()),
-            };
-            operators.push(aggregator_operator);
-            
-            connections.push(Connection {
-                from_operator: current_operator_id - 1,
-                from_port: current_output_port,
-                to_operator: current_operator_id,
-                to_port: current_output_port,
-            });
-        }
-        
-        QueryPlan {
-            plan_id: 1,
-            operators,
-            connections,
-            input_files: vec![],
-            output_schema: Arc::new(Schema::new(vec![
-                Field::new("result", DataType::Utf8, false),
-            ])),
-        }
-    }
-
-    /// 更新统计信息
-    fn update_stats(&mut self, duration: std::time::Duration) {
-        self.stats.total_queries_executed += 1;
-        self.stats.total_execution_time += duration;
-        
-        if self.stats.total_queries_executed > 0 {
-            self.stats.avg_execution_time = std::time::Duration::from_nanos(
-                self.stats.total_execution_time.as_nanos() as u64 / self.stats.total_queries_executed
-            );
-        }
-    }
-
-    /// 获取统计信息
-    pub fn get_stats(&self) -> &DriverStats {
-        &self.stats
-    }
-
-    /// 重置统计信息
-    pub fn reset_stats(&mut self) {
-        self.stats = DriverStats::default();
+    /// 停止执行
+    pub async fn stop(&mut self) -> Result<()> {
+        // MPP模型不需要特殊的停止逻辑
+        Ok(())
     }
 }
 
-/// 排序列
-#[derive(Debug, Clone)]
-pub struct SortColumn {
-    pub column_index: usize,
-    pub ascending: bool,
-    pub nulls_first: bool,
+impl Default for VectorizedDriver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-/// 连接类型
-#[derive(Debug, Clone)]
-pub enum JoinType {
-    Inner,
-    LeftOuter,
-    RightOuter,
-    FullOuter,
-    LeftSemi,
-    LeftAnti,
+/// 向量化执行器工厂
+pub struct VectorizedDriverFactory;
+
+impl VectorizedDriverFactory {
+    /// 创建默认驱动
+    pub fn create_driver() -> VectorizedDriver {
+        VectorizedDriver::new()
+    }
+
+    /// 创建高性能驱动
+    pub fn create_high_performance_driver() -> VectorizedDriver {
+        // 可以在这里配置高性能参数
+        VectorizedDriver::new()
+    }
 }

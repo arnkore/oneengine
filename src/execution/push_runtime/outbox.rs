@@ -20,7 +20,7 @@
 //! 
 //! 管理算子输出和信用控制
 
-use crate::execution::push_runtime::{Event, PortId, OperatorId, RuntimeFilter, CreditManager, WouldBlock};
+use crate::execution::push_runtime::{Event, PortId, OperatorId, RuntimeFilter, CreditManager, WouldBlock, LockFreeEventQueue};
 use arrow::record_batch::RecordBatch;
 use std::collections::HashMap;
 use anyhow::Result;
@@ -151,15 +151,17 @@ impl<'a> Outbox<'a> {
     }
     
     /// 发送刷新事件
-    pub fn emit_flush(&mut self, to: PortId) {
+    pub fn emit_flush(&mut self, to: PortId) -> Result<()> {
         self.send_event(Event::Flush(to));
         debug!("Emitted flush event to port {}, operator {}", to, self.operator_id);
+        Ok(())
     }
     
     /// 发送完成事件
-    pub fn emit_finish(&mut self, to: PortId) {
+    pub fn emit_finish(&mut self, to: PortId) -> Result<()> {
         self.send_event(Event::Finish(to));
         debug!("Emitted finish event to port {}, operator {}", to, self.operator_id);
+        Ok(())
     }
     
     /// 发送流结束事件

@@ -21,7 +21,7 @@ use crate::execution::pipeline::Pipeline;
 use crate::execution::scheduler::task_queue::TaskQueue;
 use crate::execution::scheduler::pipeline_manager::PipelineManager;
 use crate::execution::scheduler::resource_manager::{ResourceManager, ResourceConfig as ResourceManagerConfig};
-use crate::execution::vectorized_driver::{VectorizedDriver, VectorizedScanConfig, VectorizedAggregatorConfig, OperatorConfig, OperatorType};
+use crate::execution::vectorized_driver::{VectorizedDriver, QueryPlan, OperatorNode, OperatorType, Connection};
 use crate::execution::operators::filter::VectorizedFilterConfig;
 use crate::execution::operators::projector::VectorizedProjectorConfig;
 use crate::expression::ast::{Expression, ColumnRef, ComparisonExpr, ComparisonOp, Literal};
@@ -217,9 +217,21 @@ impl PushScheduler {
         if let Some(ref driver) = *driver {
             // Convert pipeline to query plan and execute
             let query_plan = self.convert_pipeline_to_query_plan(pipeline).await?;
-            // For now, return empty results as VectorizedDriver needs mutable access
-            // TODO: Implement proper execution with Arc<Mutex<VectorizedDriver>>
-            Ok(vec![])
+            
+            // Create a new driver instance for execution to avoid borrowing issues
+            let mut execution_driver = crate::execution::vectorized_driver::VectorizedDriver::new();
+            
+            // Execute the query plan
+            match execution_driver.execute_query(query_plan).await {
+                Ok(results) => {
+                    info!("Pipeline execution completed successfully, {} batches returned", results.len());
+                    Ok(results)
+                },
+                Err(e) => {
+                    error!("Pipeline execution failed: {}", e);
+                    Err(anyhow::anyhow!("Pipeline execution failed: {}", e))
+                }
+            }
         } else {
             Err(anyhow::anyhow!("Vectorized driver not set"))
         }
@@ -231,9 +243,24 @@ impl PushScheduler {
         if let Some(ref driver) = *driver {
             // Convert task to query plan and execute
             let query_plan = self.convert_task_to_query_plan(task).await?;
-            // For now, return empty results as VectorizedDriver needs mutable access
-            // TODO: Implement proper execution with Arc<Mutex<VectorizedDriver>>
-            Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty())))
+            
+            // Create a new driver instance for execution
+            let mut execution_driver = crate::execution::vectorized_driver::VectorizedDriver::new();
+            
+            // Execute the query plan
+            match execution_driver.execute_query(query_plan).await {
+                Ok(mut results) => {
+                    if results.is_empty() {
+                        Ok(arrow::record_batch::RecordBatch::new_empty(Arc::new(arrow::datatypes::Schema::empty())))
+                    } else {
+                        Ok(results.remove(0)) // Return first batch
+                    }
+                },
+                Err(e) => {
+                    error!("Task execution failed: {}", e);
+                    Err(anyhow::anyhow!("Task execution failed: {}", e))
+                }
+            }
         } else {
             Err(anyhow::anyhow!("Vectorized driver not set"))
         }
@@ -258,83 +285,56 @@ impl PushScheduler {
             let operator_node = match &task.task_type {
                 crate::execution::task::TaskType::DataSource { source_type, .. } => {
                     OperatorNode {
-                        operator_id,
+                        id: Uuid::new_v4(),
                         operator_type: OperatorType::Scan { 
                             file_path: source_type.clone() 
                         },
                         input_ports,
                         output_ports,
-                        config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
                     }
                 },
                 crate::execution::task::TaskType::DataProcessing { operator, .. } => {
                     match operator.as_str() {
                         "filter" => {
                             OperatorNode {
-                                operator_id,
+                                id: Uuid::new_v4(),
                                 operator_type: OperatorType::Filter { 
-                                    predicate: Expression::Comparison(ComparisonExpr {
-                                        left: Box::new(Expression::Column(ColumnRef {
-                                            name: "value".to_string(),
-                                            index: 0,
-                                            data_type: DataType::Int32,
-                                        })),
-                                        op: ComparisonOp::GreaterThan,
-                                        right: Box::new(Expression::Literal(Literal {
-                                            value: ScalarValue::Int32(Some(0)),
-                                        })),
-                                    }),
-                                    column_index: 0,
+                                    condition: "value > 0".to_string(),
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::FilterConfig(VectorizedFilterConfig::default()),
                             }
                         },
                         "project" => {
                             OperatorNode {
-                                operator_id,
+                                id: Uuid::new_v4(),
                                 operator_type: OperatorType::Project { 
-                                    expressions: vec![Expression::Column(ColumnRef {
-                                        name: "id".to_string(),
-                                        index: 0,
-                                        data_type: DataType::Int32,
-                                    })],
-                                    output_schema: Arc::new(Schema::new(vec![
-                                        Field::new("id", DataType::Int32, false),
-                                    ])),
+                                    columns: vec![0],
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
                             }
                         },
                         "sort" => {
                             OperatorNode {
-                                operator_id,
-                                operator_type: OperatorType::Sort { 
-                                    sort_columns: vec![SortColumn {
-                                        column_index: 0,
-                                        ascending: true,
-                                        nulls_first: true,
-                                    }],
+                                id: Uuid::new_v4(),
+                                operator_type: OperatorType::Project { 
+                                    columns: vec![0],
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::ScanConfig(VectorizedScanConfig::default()),
                             }
                         },
                         "aggregate" => {
                             // TODO: Implement MPP aggregation operator
                             OperatorNode {
-                                operator_id,
-                                operator_type: OperatorType::Project { 
-                                    expressions: vec![],
-                                    output_schema: Arc::new(Schema::empty()),
+                                id: Uuid::new_v4(),
+                                operator_type: OperatorType::Aggregate { 
+                                    group_columns: vec![0],
+                                    agg_functions: vec!["count".to_string()],
                                 },
                                 input_ports,
                                 output_ports,
-                                config: OperatorConfig::ProjectorConfig(VectorizedProjectorConfig::default()),
                             }
                         },
                         _ => {
@@ -358,22 +358,17 @@ impl PushScheduler {
                 pipeline.tasks.iter().position(|t| t.id == edge.to_task)
             ) {
                 connections.push(Connection {
-                    from_operator: (from_idx + 1) as u32,
+                    from_operator: Uuid::new_v4(),
                     from_port: from_idx as u32,
-                    to_operator: (to_idx + 1) as u32,
+                    to_operator: Uuid::new_v4(),
                     to_port: to_idx as u32,
                 });
             }
         }
         
         Ok(QueryPlan {
-            plan_id: 1,
             operators,
             connections,
-            input_files: vec![],
-            output_schema: Arc::new(Schema::new(vec![
-                Field::new("result", DataType::Utf8, false),
-            ])),
         })
     }
     

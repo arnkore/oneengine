@@ -24,6 +24,7 @@ pub mod event_loop;
 pub mod credit_manager;
 pub mod outbox;
 pub mod metrics;
+pub mod lockfree_event_queue;
 
 use arrow::record_batch::RecordBatch;
 use std::collections::HashMap;
@@ -97,6 +98,7 @@ pub trait Operator: Send + Sync {
 pub use credit_manager::CreditManager;
 pub use outbox::Outbox;
 pub use metrics::{MetricsCollector, SimpleMetricsCollector};
+pub use lockfree_event_queue::{LockFreeEventQueue, LockFreeEventQueueConfig, LockFreeEventQueueFactory};
 
 
 /// 阻塞错误

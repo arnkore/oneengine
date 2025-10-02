@@ -24,6 +24,7 @@ pub mod operators;
 // pub mod skew_handling; // 暂时注释掉，未在核心执行流程中使用
 pub mod extreme_observability;
 pub mod executor;
+pub mod performance_monitor;
 pub mod worker;
 pub mod vectorized_driver;
 pub mod pipeline;

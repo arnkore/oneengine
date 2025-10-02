@@ -20,7 +20,7 @@
 //! 
 //! 基于信用背压的纯push事件驱动执行
 
-use super::{Event, Operator, OperatorId, PortId, CreditManager, MetricsCollector, Outbox};
+use super::{Event, Operator, OperatorId, PortId, CreditManager, MetricsCollector, Outbox, LockFreeEventQueue, LockFreeEventQueueFactory};
 use arrow::record_batch::RecordBatch;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -72,6 +72,34 @@ impl EventLoop {
             metrics,
             running: false,
             max_events_per_cycle: 1000,
+            stats: EventLoopStats::default(),
+        }
+    }
+    
+    /// 创建高性能事件循环
+    pub fn new_high_performance(metrics: Arc<dyn MetricsCollector>) -> Self {
+        Self {
+            operators: HashMap::new(),
+            credit_manager: CreditManager::new(),
+            event_queue: Vec::new(),
+            port_mapping: HashMap::new(),
+            metrics,
+            running: false,
+            max_events_per_cycle: 2000,
+            stats: EventLoopStats::default(),
+        }
+    }
+    
+    /// 创建低延迟事件循环
+    pub fn new_low_latency(metrics: Arc<dyn MetricsCollector>) -> Self {
+        Self {
+            operators: HashMap::new(),
+            credit_manager: CreditManager::new(),
+            event_queue: Vec::new(),
+            port_mapping: HashMap::new(),
+            metrics,
+            running: false,
+            max_events_per_cycle: 100,
             stats: EventLoopStats::default(),
         }
     }
@@ -149,6 +177,7 @@ impl EventLoop {
         let mut events_processed = 0;
         let mut blocked_operators = 0;
         
+        // 处理事件队列
         while events_processed < self.max_events_per_cycle {
             if let Some(event) = self.event_queue.pop() {
                 let process_start = Instant::now();
